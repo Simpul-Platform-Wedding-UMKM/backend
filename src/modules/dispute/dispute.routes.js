@@ -1,0 +1,8 @@
+import { Router } from "express";
+import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { raiseDispute, resolveDispute } from "./dispute.controller.js";
+
+export const disputeRouter = Router();
+
+disputeRouter.post("/", requireAuth, requireRole("CONSUMER"), raiseDispute);
+disputeRouter.patch("/:id/resolve", requireAuth, requireRole("ADMIN"), resolveDispute);

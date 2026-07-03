@@ -1,13 +1,377 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// =====================================================================
+// SIMPUL — Prisma schema
+// Maps directly to the 3 pillars in the proposal:
+//   1. Smart QRIS Split Payment  -> Booking, BookingItem, Payment, PaymentSplit
+//   2. Wedding Budget Planner    -> WeddingProject, BudgetAllocation
+//   3. AI Wedding Assistant      -> AiRecommendationLog (+ reads Vendor/VendorService)
+// Plus the governance pieces the proposal explicitly calls for:
+//   Dispute Resolution Framework -> Dispute (scoped to BookingItem, not the whole Booking)
+//   Zero Holding Funds           -> Payment/PaymentSplit only ever store gateway
+//                                   references and routing instructions, never a balance
+// =====================================================================
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------
+
+enum Role {
+  CONSUMER
+  VENDOR
+  ADMIN
+}
+
+model Account {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  role         Role
+  fullName     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // 1:1 — only populated when role = VENDOR
+  vendor Vendor?
+
+  // 1:many — only populated when role = CONSUMER
+  weddingProjects WeddingProject[]
+  disputesRaised  Dispute[]
+  reviews         Review[]
+
+  @@map("accounts")
+}
+
+// ---------------------------------------------------------------------
+// Vendors (the UMKM side of the two-sided marketplace)
+// ---------------------------------------------------------------------
+
+enum VendorCategory {
+  MUA
+  CATERING
+  DECORATION
+  PHOTOGRAPHY
+  ATTIRE
+  WEDDING_ORGANIZER
+  VENUE
+  OTHER
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+}
+
+model Vendor {
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  businessName String
+  category     VendorCategory
+  description  String?
+
+  // FR-02 Hyper-Local Filter needs region + price range + rating to be indexed
+  region      String // e.g. "Purwokerto", "Banyumas", "Cilacap" — Eks-Karesidenan Banyumas scope
+  priceMin    Int // in IDR, smallest package price
+  priceMax    Int // in IDR, largest package price
+  ratingAvg   Float  @default(0)
+  ratingCount Int    @default(0)
+
+  // KYB — referenced directly in the proposal's risk mitigation table
+  kybVerified Boolean @default(false)
+
+  // Where the vendor's share of a split payment actually lands.
+  // SIMPUL only ever stores this as routing metadata — see Payment/PaymentSplit below.
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountName   String?
+  pjpDestinationId  String? // destination_account_id on the PJP side (e.g. Xendit sub-account id)
+
+  subscriptionTier SubscriptionTier @default(FREE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services      VendorService[]
+  bookingItems  BookingItem[]
+  reviews       Review[]
+  featuredSlots FeaturedSlot[]
+
+  @@index([category, region])
+  @@index([priceMin, priceMax])
+  @@map("vendors")
+}
+
+// A vendor can offer multiple packages (e.g. "Basic Makeup", "Premium Makeup").
+// The AI assistant and hyper-local filter both match against this table, not
+// the Vendor row itself, since price/availability live at the package level.
+model VendorService {
+  id          String   @id @default(cuid())
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Int // in IDR
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  bookingItems BookingItem[]
+
+  @@index([vendorId])
+  @@map("vendor_services")
+}
+
+// ---------------------------------------------------------------------
+// Wedding Budget Planner (pillar 2)
+// ---------------------------------------------------------------------
+
+model WeddingProject {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  eventDate   DateTime?
+  guestCount  Int?
+  location    String?
+  themePref   String?
+  totalBudget Int // in IDR — what the AI assistant and budget planner both work against
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  budgetAllocations   BudgetAllocation[]
+  bookings            Booking[]
+  aiRecommendationLog AiRecommendationLog[]
+
+  @@map("wedding_projects")
+}
+
+// One row per spending category (MUA, catering, decoration...). Tracks
+// planned vs actual so the app can flag overbudgeting before it happens,
+// which is the specific pain point called out in section 1.2.
+model BudgetAllocation {
+  id               String         @id @default(cuid())
+  weddingProjectId String
+  weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
+  category         VendorCategory
+  plannedAmount    Int // in IDR
+  actualAmount     Int            @default(0) // updated when a BookingItem in this category is paid
+
+  @@unique([weddingProjectId, category])
+  @@map("budget_allocations")
+}
+
+// ---------------------------------------------------------------------
+// Booking = the consolidated multi-vendor cart (pillar 1)
+// ---------------------------------------------------------------------
+
+enum BookingItemStatus {
+  PENDING
+  ON_PROGRESS
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+// A Booking is the thing that gets ONE consolidated QRIS code.
+// It has many BookingItems, one per vendor service the consumer picked.
+model Booking {
+  id               String         @id @default(cuid())
+  weddingProjectId String
+  weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  items   BookingItem[]
+  payment Payment?
+
+  @@map("bookings")
+}
+
+// Each item tracks its own status independently — this is what makes the
+// Dispute Resolution Framework fair: if the caterer no-shows, only the
+// caterer's payout is held back, not the MUA's or decorator's.
+model BookingItem {
+  id              String            @id @default(cuid())
+  bookingId       String
+  booking         Booking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  vendorId        String
+  vendor          Vendor            @relation(fields: [vendorId], references: [id])
+  vendorServiceId String
+  vendorService   VendorService     @relation(fields: [vendorServiceId], references: [id])
+  price           Int // snapshot of VendorService.price at time of booking, in IDR
+  status          BookingItemStatus @default(PENDING)
+
+  paymentSplit PaymentSplit?
+  dispute      Dispute?
+  review       Review?
+
+  @@index([vendorId, status])
+  @@map("booking_items")
+}
+
+// ---------------------------------------------------------------------
+// Payment — Smart QRIS Split Payment (pillar 1) + Zero Holding Funds
+// ---------------------------------------------------------------------
+//
+// IMPORTANT: nothing in this table or PaymentSplit represents money SIMPUL
+// holds. `status` mirrors whatever the PJP (Xendit/Midtrans) reports via
+// webhook. If SIMPUL's DB and the PJP's records ever disagree, the PJP is
+// the source of truth — that's what "zero holding funds" means in practice.
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  CANCELLED
+}
+
+enum SettlementStatus {
+  PENDING
+  SETTLED
+  FAILED
+}
+
+model Payment {
+  id        String  @id @default(cuid())
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  totalAmount Int // sum of all BookingItem.price, in IDR
+  platformFee Int // sum of PaymentSplit.platformFeeAmount, in IDR — SIMPUL's only revenue from this transaction
+
+  // References into the PJP Kategori 1 system — never a balance we control
+  pjpProvider      String // "xendit" | "midtrans"
+  pjpTransactionId String?   @unique
+  qrisString       String? // raw QR payload, if you want to render it yourself instead of hotlinking
+  qrisImageUrl     String?
+  expiresAt        DateTime? // Dynamic QRIS TTL — Midtrans defaults to 15 min, matches the proposal's risk table
+
+  status    PaymentStatus @default(PENDING)
+  paidAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  splits PaymentSplit[]
+
+  @@map("payments")
+}
+
+// One row per vendor being paid out of a given Payment. This is the
+// artifact that proves the split actually happened the way FR-01 requires.
+model PaymentSplit {
+  id            String      @id @default(cuid())
+  paymentId     String
+  payment       Payment     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bookingItemId String      @unique
+  bookingItem   BookingItem @relation(fields: [bookingItemId], references: [id])
+  vendorId      String
+
+  vendorAmount      Int // what the vendor actually receives, in IDR
+  platformFeeAmount Int // SIMPUL's micro-fee on this line, in IDR (0.5–1% per the proposal)
+
+  settlementStatus SettlementStatus @default(PENDING)
+  settledAt        DateTime?
+  pjpTransferId    String? // disbursement/payout id from the PJP, once routed
+
+  @@map("payment_splits")
+}
+
+// ---------------------------------------------------------------------
+// Dispute Resolution Framework
+// ---------------------------------------------------------------------
+
+enum DisputeStatus {
+  OPEN
+  IN_MEDIATION
+  RESOLVED
+  REJECTED
+}
+
+model Dispute {
+  id            String      @id @default(cuid())
+  bookingItemId String      @unique
+  bookingItem   BookingItem @relation(fields: [bookingItemId], references: [id], onDelete: Cascade)
+  raisedById    String
+  raisedBy      Account     @relation(fields: [raisedById], references: [id])
+
+  reason       String
+  evidenceUrls String[] // photos, chat logs, delivery proof — stored in object storage, URLs only
+  status       DisputeStatus @default(OPEN)
+  resolution   String?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@map("disputes")
+}
+
+// ---------------------------------------------------------------------
+// Reviews (feeds Vendor.ratingAvg, also referenced by the AI assistant)
+// ---------------------------------------------------------------------
+
+model Review {
+  id            String      @id @default(cuid())
+  bookingItemId String      @unique
+  bookingItem   BookingItem @relation(fields: [bookingItemId], references: [id], onDelete: Cascade)
+  vendorId      String
+  vendor        Vendor      @relation(fields: [vendorId], references: [id])
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id])
+
+  rating  Int // 1–5
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@map("reviews")
+}
+
+// ---------------------------------------------------------------------
+// AI Wedding Assistant (pillar 3) — audit log, not the recommendation
+// engine itself. Keeping the actual matching logic in application code
+// (see src/modules/ai) rather than in the DB, but logging every query +
+// result here is what lets you demo "the AI only ever recommends real,
+// verified vendors" to judges — directly answers the proposal's own
+// risk-mitigation row for "Kesalahan rekomendasi paket oleh AI Assistant".
+// ---------------------------------------------------------------------
+
+model AiRecommendationLog {
+  id               String         @id @default(cuid())
+  weddingProjectId String
+  weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
+
+  queryParams        Json // budget, guestCount, location, themePref, requestedCategories
+  candidateVendorIds String[] // vendors that survived the DB filter, before the LLM ranked them
+  recommendedPackage Json // final structured output shown to the user
+
+  createdAt DateTime @default(now())
+
+  @@map("ai_recommendation_logs")
+}
+
+// ---------------------------------------------------------------------
+// Monetization — stretch goal, not needed for the core demo.
+// Wire this up only if the 3 pillars are done and stable.
+// ---------------------------------------------------------------------
+
+model FeaturedSlot {
+  id         String   @id @default(cuid())
+  vendorId   String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  startDate  DateTime
+  endDate    DateTime
+  amountPaid Int
+
+  @@index([vendorId, endDate])
+  @@map("featured_slots")
 }

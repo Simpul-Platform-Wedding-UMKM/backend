@@ -1,3 +1,38 @@
-node_modules
-dist
+# 1. FOLDER RAHASIA & CREDENTIALS (SANGAT FATAL JIKA TER-EXPOSE)
 .env
+.env.local
+.env.*.local
+
+# 2. DEPENDENCIES (Jangan upload folder node_modules ke GitHub)
+node_modules/
+.pnp
+.pnp.js
+
+# 3. HASIL BUILD / COMPILE (Folder hasil compile TypeScript)
+dist/
+build/
+*.tsbuildinfo
+
+# 4. PRISMA SPECIFIC
+# Abaikan folder migrations JIKA Anda menggunakan Supabase dengan "prisma db push"
+# (Jika Anda pakai "prisma migrate", hapus baris di bawah ini agar migration history ter-commit)
+# prisma/migrations/
+
+# 5. LOGS & OS FILES
+logs
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# 6. IDE & EDITOR
+.vscode/
+.idea/
+*.swp
+*.swo
+
+#seed
+migrations/
+
+#agent
+.agents
