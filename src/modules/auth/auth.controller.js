@@ -6,6 +6,7 @@ import { prisma } from "../../lib/prisma.js";
 import { env } from "../../config/env.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 
+
 const registerConsumerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
@@ -112,6 +113,15 @@ export const login = asyncHandler(async (req, res) => {
   if (!valid) throw new ApiError(401, "Invalid email or password");
 
   res.json({ token: signToken(account), account: sanitize(account) });
+});
+
+export const getMe = asyncHandler(async (req, res) => {
+  const account = await prisma.account.findUnique({
+    where: { id: req.account.id },
+    include: { vendor: true },
+  });
+  if (!account) throw new ApiError(404, "Account not found");
+  res.json({ account: sanitize(account) });
 });
 
 function sanitize(account) {

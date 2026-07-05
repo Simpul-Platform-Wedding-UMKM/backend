@@ -8,7 +8,7 @@ import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 // you have time before the demo.)
 const searchSchema = z.object({
   region: z.string().optional(),
-  category: z.string().optional(),
+  category: z.enum(["MUA", "CATERING", "DECORATION", "PHOTOGRAPHY", "ATTIRE", "WEDDING_ORGANIZER", "VENUE", "OTHER"]).optional(),
   minPrice: z.coerce.number().int().optional(),
   maxPrice: z.coerce.number().int().optional(),
   minRating: z.coerce.number().optional(),

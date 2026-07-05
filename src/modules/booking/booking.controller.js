@@ -99,3 +99,15 @@ export const updateBookingItemStatus = asyncHandler(async (req, res) => {
   });
   res.json(updated);
 });
+export const getBookings = asyncHandler(async (req, res) => {
+  const bookings = await prisma.booking.findMany({
+    where: { weddingProject: { accountId: req.account.id } },
+    include: {
+      items: { include: { vendor: true, vendorService: true, dispute: true } },
+      payment: true,
+      weddingProject: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(bookings);
+});

@@ -33,6 +33,8 @@ Thumbs.db
 
 #seed
 migrations/
+seed.ts
+seed.js
 
 #agent
 .agents
