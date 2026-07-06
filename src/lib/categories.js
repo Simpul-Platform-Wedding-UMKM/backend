@@ -1,0 +1,10 @@
+export const CATEGORIES = [
+  "MUA",
+  "CATERING",
+  "DECORATION",
+  "PHOTOGRAPHY",
+  "ATTIRE",
+  "WEDDING_ORGANIZER",
+  "VENUE",
+  "OTHER",
+];
