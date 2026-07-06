@@ -29,11 +29,11 @@ enum Role {
 }
 
 model Account {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  phone        String?  @unique
-  passwordHash String
-  role         Role
+  id              String   @id @default(cuid())
+  email           String   @unique
+  phone           String?  @unique
+  passwordHash    String
+  role            Role
   fullName        String
   profileImageUrl String?
   createdAt       DateTime @default(now())
@@ -153,6 +153,7 @@ model WeddingProject {
   bookings            Booking[]
   aiRecommendationLog AiRecommendationLog[]
 
+  @@index([accountId])
   @@map("wedding_projects")
 }
 
@@ -167,6 +168,7 @@ model BudgetAllocation {
   plannedAmount    Int // in IDR
   actualAmount     Int            @default(0) // updated when a BookingItem in this category is paid
 
+  @@index([weddingProjectId])
   @@unique([weddingProjectId, category])
   @@map("budget_allocations")
 }
@@ -195,6 +197,7 @@ model Booking {
   items   BookingItem[]
   payment Payment?
 
+  @@index([weddingProjectId])
   @@map("bookings")
 }
 
@@ -216,6 +219,8 @@ model BookingItem {
   dispute      Dispute?
   review       Review?
 
+  @@index([bookingId])
+  @@index([vendorServiceId])
   @@index([vendorId, status])
   @@map("booking_items")
 }
@@ -285,6 +290,7 @@ model PaymentSplit {
   settledAt        DateTime?
   pjpTransferId    String? // disbursement/payout id from the PJP, once routed
 
+  @@index([paymentId])
   @@map("payment_splits")
 }
 
@@ -314,6 +320,7 @@ model Dispute {
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
 
+  @@index([raisedById])
   @@map("disputes")
 }
 
@@ -335,6 +342,8 @@ model Review {
 
   createdAt DateTime @default(now())
 
+  @@index([vendorId])
+  @@index([accountId])
   @@map("reviews")
 }
 
@@ -358,6 +367,7 @@ model AiRecommendationLog {
 
   createdAt DateTime @default(now())
 
+  @@index([weddingProjectId])
   @@map("ai_recommendation_logs")
 }
 
