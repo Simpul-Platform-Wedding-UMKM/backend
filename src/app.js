@@ -65,3 +65,5 @@ app.use("/reviews", reviewRouter);
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);
+
+export default app;

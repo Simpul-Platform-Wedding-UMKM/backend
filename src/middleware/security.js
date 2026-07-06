@@ -57,6 +57,7 @@ export const globalRateLimit = rateLimit({
     standardHeaders: true, // Return rate limit info in RateLimit-* headers
     legacyHeaders: false,
     message: { error: "Too many requests, please try again later." },
+    validate: { keyGeneratorIpFallback: false },
     keyGenerator,
 });
 
@@ -69,6 +70,7 @@ export const authRateLimit = rateLimit({
     message: {
         error: "Too many auth attempts, please try again in 15 minutes.",
     },
+    validate: { keyGeneratorIpFallback: false },
     keyGenerator,
 });
 
