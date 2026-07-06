@@ -3,6 +3,14 @@ import cors from "cors";
 import morgan from "morgan";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import {
+  bodyLimit,
+  securityHeaders,
+  globalRateLimit,
+  authRateLimit,
+  protoGuard,
+  sanitizeQuery,
+} from "./middleware/security.js";
 
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { vendorRouter } from "./modules/vendor/vendor.routes.js";
@@ -16,9 +24,16 @@ import { reviewRouter } from "./modules/review/review.routes.js";
 
 export const app = express();
 
+// Trust Vercel's proxy layer so req.ip is the real client IP (needed for rate limiting)
+app.set("trust proxy", 1);
+
+app.use(securityHeaders);
+app.use(globalRateLimit);
 app.use(cors({ origin: env.corsOrigin }));
 app.use(morgan("dev"));
-app.use(express.json());
+app.use(express.json({ limit: bodyLimit }));
+app.use(protoGuard);
+app.use(sanitizeQuery);
 
 // Xendit's webhook is verified via the x-callback-token header (checked
 // inside xenditWebhook), not a raw-body HMAC signature, so it's safe to
@@ -27,7 +42,7 @@ app.use("/webhooks", webhookRouter);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-app.use("/auth", authRouter);
+app.use("/auth", authRateLimit, authRouter);
 app.use("/vendors", vendorRouter);
 app.use("/budget", budgetRouter);
 app.use("/bookings", bookingRouter);

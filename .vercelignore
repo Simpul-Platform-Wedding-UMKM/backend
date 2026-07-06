@@ -1,0 +1,10 @@
+# Don't upload these to Vercel — they bloat the deploy & expose nothing useful
+.env
+.env.*
+node_modules
+prisma/migrations
+*.log
+coverage
+.nyc_output
+src/tests
+tests
