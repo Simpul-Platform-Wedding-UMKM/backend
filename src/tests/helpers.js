@@ -20,6 +20,30 @@ export const api = request(process.env.TEST_API_URL || app);
 // ── Database ──────────────────────────────────────────────────────────────────
 export const db = prisma;
 
+export async function resetDB() {
+  console.log("resetDB called. DATABASE_URL =", process.env.DATABASE_URL);
+  const searchPath = await db.$queryRaw`SHOW search_path`;
+  console.log("resetDB SHOW search_path:", searchPath);
+  const tablenames = await db.$queryRaw`
+    SELECT tablename FROM pg_tables WHERE schemaname='test'
+  `;
+  console.log("resetDB found tables in 'test' schema:", tablenames);
+
+  const tables = tablenames
+    .map(({ tablename }) => tablename)
+    .filter((name) => name !== "_prisma_migrations")
+    .map((name) => `"test"."${name}"`)
+    .join(", ");
+
+  if (tables.length > 0) {
+    try {
+      await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
+    } catch (e) {
+      console.error("Failed to truncate database tables:", e);
+    }
+  }
+}
+
 
 
 // ── Seed specific test accounts from seed.ts ───────────────────────────────
@@ -40,7 +64,7 @@ export async function seedSeededUsers() {
       email: "rara.makeup.studio@demo.simpul",
       passwordHash: "password123", // mocked bcryptjs makes this match password123
       fullName: "Rara Makeup Studio",
-      role: "VENDOR",
+      role: "CONSUMER",
       vendor: {
         create: {
           businessName: "Rara Makeup Studio",
@@ -78,19 +102,32 @@ export async function registerConsumer(overrides = {}) {
  * @param {Partial<object>} overrides
  */
 export async function registerVendor(overrides = {}) {
+  const email = overrides.email || `vendor-${Date.now()}-${Math.random().toString(36).substring(7)}@test.com`;
+  const password = overrides.password || "password123";
+  const fullName = overrides.fullName || "Test Vendor";
+
+  const consumer = await registerConsumer({ email, password, fullName });
+
   const payload = {
-    email: `vendor-${Date.now()}-${Math.random().toString(36).substring(7)}@test.com`,
-    password: "password123",
-    fullName: "Test Vendor",
-    businessName: "Test Studio",
-    category: "MUA",
-    region: "Purwokerto",
-    priceMin: 500000,
-    priceMax: 3000000,
-    ...overrides,
+    businessName: overrides.businessName || "Test Studio",
+    category: overrides.category || "MUA",
+    region: overrides.region || "Purwokerto",
+    priceMin: overrides.priceMin !== undefined ? overrides.priceMin : 500000,
+    priceMax: overrides.priceMax !== undefined ? overrides.priceMax : 3000000,
   };
-  const res = await api.post("/auth/register/vendor").send(payload).expect(201);
-  return res.body; // { token, account }
+
+  const res = await authApi(consumer.token)
+    .post("/vendors/apply")
+    .send(payload)
+    .expect(201);
+
+  return {
+    token: consumer.token,
+    account: {
+      ...consumer.account,
+      vendor: res.body,
+    },
+  };
 }
 
 /**

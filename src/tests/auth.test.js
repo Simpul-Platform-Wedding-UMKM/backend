@@ -8,7 +8,11 @@
  */
 
 import { describe, it, beforeEach, afterAll, expect } from "vitest";
-import { api, db, registerConsumer } from "./helpers.js";
+import { api, db, registerConsumer, authApi, resetDB } from "./helpers.js";
+
+beforeEach(async () => {
+  await resetDB();
+});
 
 // Close the DB connection after all tests finish
 afterAll(async () => {
@@ -64,14 +68,13 @@ describe("POST /auth/register/consumer", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /auth/register/vendor", () => {
+describe("POST /vendors/apply", () => {
   it("rejects when priceMin > priceMax", async () => {
-    const res = await api
-      .post("/auth/register/vendor")
+    const { token } = await registerConsumer();
+
+    const res = await authApi(token)
+      .post("/vendors/apply")
       .send({
-        email: "v@test.com",
-        password: "password123",
-        fullName: "Vendor",
         businessName: "Studio",
         category: "MUA",
         region: "Purwokerto",
@@ -83,13 +86,12 @@ describe("POST /auth/register/vendor", () => {
     expect(res.body.error).toMatch(/priceMin/i);
   });
 
-  it("registers a vendor with valid data", async () => {
-    const res = await api
-      .post("/auth/register/vendor")
+  it("applies a consumer to become a vendor with valid data", async () => {
+    const { token } = await registerConsumer();
+
+    const res = await authApi(token)
+      .post("/vendors/apply")
       .send({
-        email: "vendor@test.com",
-        password: "password123",
-        fullName: "Rara Studio",
         businessName: "Rara MUA",
         category: "MUA",
         region: "Purwokerto",
@@ -98,8 +100,8 @@ describe("POST /auth/register/vendor", () => {
       })
       .expect(201);
 
-    expect(res.body.account.role).toBe("VENDOR");
-    expect(res.body.token).toBeTruthy();
+    expect(res.body.businessName).toBe("Rara MUA");
+    expect(res.body.accountId).toBeDefined();
   });
 });
 
@@ -130,5 +132,73 @@ describe("POST /auth/login", () => {
       .post("/auth/login")
       .send({ email: "nobody@test.com", password: "anything" })
       .expect(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("POST /auth/google", () => {
+  it("authenticates a Google user (registers if new, returns token)", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (url.includes("tokeninfo")) {
+        return {
+          ok: true,
+          json: async () => ({
+            sub: "google-12345",
+            email: "googleuser@test.com",
+            name: "Google User Test",
+            picture: "https://google.com/pic.jpg",
+          }),
+        };
+      }
+      return originalFetch(url);
+    };
+
+    try {
+      const res = await api
+        .post("/auth/google")
+        .send({ idToken: "mock-valid-id-token" })
+        .expect(200);
+
+      expect(res.body).toHaveProperty("token");
+      expect(res.body.account.email).toBe("googleuser@test.com");
+      expect(res.body.account.fullName).toBe("Google User Test");
+      expect(res.body.account.googleId).toBe("google-12345");
+      expect(res.body.account.passwordHash).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("links googleId if email already exists", async () => {
+    await registerConsumer({ email: "link@test.com", fullName: "Original Name" });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (url.includes("tokeninfo")) {
+        return {
+          ok: true,
+          json: async () => ({
+            sub: "google-67890",
+            email: "link@test.com",
+            name: "Google Name",
+            picture: "https://google.com/pic.jpg",
+          }),
+        };
+      }
+      return originalFetch(url);
+    };
+
+    try {
+      const res = await api
+        .post("/auth/google")
+        .send({ idToken: "mock-link-id-token" })
+        .expect(200);
+
+      expect(res.body.account.email).toBe("link@test.com");
+      expect(res.body.account.googleId).toBe("google-67890");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

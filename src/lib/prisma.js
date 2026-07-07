@@ -1,5 +1,11 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import { Pool } from "pg";
+
+if (process.env.NODE_ENV === "test") {
+  dotenv.config({ path: ".env.test", override: true });
+} else {
+  dotenv.config();
+}
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
@@ -9,12 +15,6 @@ import { PrismaClient } from "@prisma/client";
 const globalForPrisma = globalThis;
 
 function createPrismaClient() {
-  // Supabase pooler (port 6543, PgBouncer transaction mode) requires SSL.
-  // WSL2 doesn't have a system CA bundle by default, so we disable cert
-  // verification — safe for Supabase because the connection string already
-  // authenticates via password and the pooler only accepts known project
-  // credentials. In production, set ssl: { ca: readFileSync('...') } if
-  // you want full chain verification.
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
@@ -22,6 +22,7 @@ function createPrismaClient() {
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    options: process.env.PGOPTIONS,
   });
 
   pool.on("error", (err) => {
@@ -30,7 +31,10 @@ function createPrismaClient() {
     console.error("[pg pool] idle client error:", err.message);
   });
 
-  const adapter = new PrismaPg(pool);
+  const schemaMatch = process.env.DATABASE_URL ? process.env.DATABASE_URL.match(/[?&]schema=([^&]+)/) : null;
+  const schema = schemaMatch ? schemaMatch[1] : undefined;
+
+  const adapter = new PrismaPg(pool, { schema });
   return new PrismaClient({
     adapter,
     log:

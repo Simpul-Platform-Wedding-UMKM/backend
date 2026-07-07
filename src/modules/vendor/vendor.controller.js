@@ -65,12 +65,11 @@ const updateProfileSchema = z
         { message: "priceMin must be <= priceMax", path: ["priceMax"] },
     );
 
-// Vendor updates their own profile — req.account.id is the Account id, so
-// we scope the update through the Account -> Vendor relation.
+// Vendor updates their own profile — req.vendor is set by requireVendor middleware.
 export const updateMyVendorProfile = asyncHandler(async (req, res) => {
     const data = updateProfileSchema.parse(req.body);
     const vendor = await prisma.vendor.update({
-        where: { accountId: req.account.id },
+        where: { id: req.vendor.id },
         data,
     });
     res.json(vendor);
@@ -84,13 +83,44 @@ const createServiceSchema = z.object({
 
 export const addMyVendorService = asyncHandler(async (req, res) => {
     const data = createServiceSchema.parse(req.body);
-    const vendor = await prisma.vendor.findUnique({
-        where: { accountId: req.account.id },
-    });
-    if (!vendor) throw new ApiError(404, "Vendor profile not found");
-
     const service = await prisma.vendorService.create({
-        data: { ...data, vendorId: vendor.id },
+        data: { ...data, vendorId: req.vendor.id },
     });
     res.status(201).json(service);
+});
+
+const applyVendorSchema = z.object({
+    businessName: z.string().min(1),
+    category: z.enum(CATEGORIES),
+    region: z.string().min(1),
+    priceMin: z.number().int().nonnegative(),
+    priceMax: z.number().int().nonnegative(),
+    description: z.string().optional(),
+    bankName: z.string().optional(),
+    bankAccountNumber: z.string().optional(),
+    bankAccountName: z.string().optional(),
+}).refine((d) => d.priceMin <= d.priceMax, {
+    message: "priceMin must be <= priceMax",
+    path: ["priceMax"],
+});
+
+export const applyVendor = asyncHandler(async (req, res) => {
+    const data = applyVendorSchema.parse(req.body);
+
+    const existingVendor = await prisma.vendor.findUnique({
+        where: { accountId: req.account.id },
+    });
+    if (existingVendor) {
+        throw new ApiError(400, "Account is already registered as a vendor");
+    }
+
+    const vendor = await prisma.vendor.create({
+        data: {
+            ...data,
+            accountId: req.account.id,
+            kybVerified: false,
+        },
+    });
+
+    res.status(201).json(vendor);
 });

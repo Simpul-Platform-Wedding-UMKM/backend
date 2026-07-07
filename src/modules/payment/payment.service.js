@@ -40,30 +40,74 @@ async function xenditPost(path, body) {
     return data;
 }
 
+async function midtransPost(path, body) {
+    const isProd = env.midtransIsProduction;
+    const baseUrl = isProd ? "https://api.midtrans.com" : "https://api.sandbox.midtrans.com";
+    const res = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Authorization: `Basic ${Buffer.from(`${env.midtransServerKey ?? ""}:`).toString("base64")}`,
+        },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        const err = new Error(
+            data?.status_message ?? `Midtrans request failed: ${res.status}`,
+        );
+        err.response = { data };
+        throw err;
+    }
+    return data;
+}
+
 const QRIS_TTL_MINUTES = 15; // matches the proposal's stated Dynamic QRIS TTL and Midtrans's own default
 
 export async function createQrisForBooking(booking, totalAmount) {
     const expiresAt = new Date(Date.now() + QRIS_TTL_MINUTES * 60 * 1000);
 
-    const data = await xenditPost("/qr_codes", {
-        reference_id: booking.id,
-        type: "DYNAMIC",
-        currency: "IDR",
-        amount: totalAmount,
-        expires_at: expiresAt.toISOString(),
-        callback_url: `${process.env.PUBLIC_BASE_URL ?? "http://localhost:4000"}/webhooks/xendit`,
-    });
+    if (env.pjpProvider === "midtrans") {
+        const orderId = `${booking.id}_${Date.now()}`;
+        const data = await midtransPost("/v2/charge", {
+            payment_type: "qris",
+            transaction_details: {
+                order_id: orderId,
+                gross_amount: totalAmount,
+            },
+            qris: {
+                acquirer: "gopay"
+            }
+        });
 
-    return {
-        pjpTransactionId: data.id,
-        qrisString: data.qr_string,
-        expiresAt,
-    };
+        const qrAction = data.actions?.find((a) => a.name === "generate-qr-code");
+        return {
+            pjpTransactionId: data.transaction_id,
+            qrisString: qrAction?.url || null,
+            expiresAt,
+        };
+    } else {
+        const data = await xenditPost("/qr_codes", {
+            reference_id: booking.id,
+            type: "DYNAMIC",
+            currency: "IDR",
+            amount: totalAmount,
+            expires_at: expiresAt.toISOString(),
+            callback_url: `${process.env.PUBLIC_BASE_URL ?? "http://localhost:4000"}/webhooks/xendit`,
+        });
+
+        return {
+            pjpTransactionId: data.id,
+            qrisString: data.qr_string,
+            expiresAt,
+        };
+    }
 }
 
-// Called from the webhook route once Xendit confirms the QR was paid.
+// Called from the webhook route once confirmation is received.
 // Computes each vendor's share from the BookingItem prices that were
-// snapshotted at checkout, then fires one Disbursement per vendor.
+// snapshotted at checkout, then fires one Payout per vendor.
 export async function settlePayment(paymentId) {
     const payment = await prisma.payment.findUnique({
         where: { id: paymentId },
@@ -78,29 +122,33 @@ export async function settlePayment(paymentId) {
         const vendor = split.bookingItem.vendor;
 
         try {
-            const data = await xenditPost("/disbursements", {
-                external_id: `split_${split.id}`,
-                amount: split.vendorAmount,
-                bank_code: vendor.bankName,
-                account_holder_name: vendor.bankAccountName,
-                account_number: vendor.bankAccountNumber,
-                description: `SIMPUL payout — booking ${payment.bookingId}`,
-            });
+            let pjpTransferId;
+            if (env.pjpProvider === "midtrans") {
+                console.log(`[Midtrans Split Payout Simulation] Splitting ${split.vendorAmount} to vendor ${vendor.businessName}`);
+                pjpTransferId = `midtrans_sim_${split.id}`;
+            } else {
+                const data = await xenditPost("/disbursements", {
+                    external_id: `split_${split.id}`,
+                    amount: split.vendorAmount,
+                    bank_code: vendor.bankName,
+                    account_holder_name: vendor.bankAccountName,
+                    account_number: vendor.bankAccountNumber,
+                    description: `SIMPUL payout — booking ${payment.bookingId}`,
+                });
+                pjpTransferId = data.id;
+            }
 
             await prisma.paymentSplit.update({
                 where: { id: split.id },
                 data: {
                     settlementStatus: "SETTLED",
                     settledAt: new Date(),
-                    pjpTransferId: data.id,
+                    pjpTransferId,
                 },
             });
         } catch (err) {
-            // Don't let one failed vendor payout silently swallow the rest —
-            // log and keep the split PENDING so it shows up in a reconciliation
-            // job/dashboard rather than getting lost.
             console.error(
-                `Disbursement failed for split ${split.id}:`,
+                `Payout failed for split ${split.id}:`,
                 err.response?.data ?? err.message,
             );
             await prisma.paymentSplit.update({

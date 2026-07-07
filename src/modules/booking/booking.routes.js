@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { requireAuth, requireRole, requireVendor } from "../../middleware/auth.js";
 import { createBooking, getBooking, updateBookingItemStatus, getBookings } from "./booking.controller.js";
 
 export const bookingRouter = Router();
@@ -10,6 +10,6 @@ bookingRouter.get("/:id", requireAuth, getBooking);
 bookingRouter.patch(
   "/items/:itemId/status",
   requireAuth,
-  requireRole("VENDOR"),
+  requireVendor,
   updateBookingItemStatus
 );

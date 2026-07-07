@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
+import { prisma } from "../lib/prisma.js";
 
 export function requireAuth(req, res, next) {
   const header = req.headers.authorization;
@@ -24,4 +25,19 @@ export function requireRole(...roles) {
     }
     next();
   };
+}
+
+export function requireVendor(req, res, next) {
+  if (!req.account) {
+    return res.status(401).json({ error: "Missing or malformed Authorization header" });
+  }
+  prisma.vendor.findUnique({
+    where: { accountId: req.account.id }
+  }).then((vendor) => {
+    if (!vendor) {
+      return res.status(403).json({ error: "Forbidden: Vendor profile required" });
+    }
+    req.vendor = vendor;
+    next();
+  }).catch(next);
 }

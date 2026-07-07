@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { api } from "./helpers.js";
+import { prisma } from "../lib/prisma.js";
+
+describe("Database Search Path", () => {
+  it("prints search_path", async () => {
+    const res = await prisma.$queryRawUnsafe("SHOW search_path");
+    console.log("DATABASE SEARCH PATH IN TEST:", res);
+  });
+});
 
 describe("GET /health", () => {
   it("reports ok and db up when the database is reachable", async () => {

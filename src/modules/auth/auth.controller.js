@@ -16,18 +16,9 @@ const registerConsumerSchema = z.object({
     phone: z.string().optional(),
 });
 
-const registerVendorSchema = registerConsumerSchema
-    .extend({
-        businessName: z.string().min(1),
-        category: z.enum(CATEGORIES),
-        region: z.string().min(1),
-        priceMin: z.number().int().nonnegative(),
-        priceMax: z.number().int().nonnegative(),
-    })
-    .refine((d) => d.priceMin <= d.priceMax, {
-        message: "priceMin must be <= priceMax",
-        path: ["priceMax"],
-    });
+const googleLoginSchema = z.object({
+    idToken: z.string().min(1),
+});
 
 const loginSchema = z.object({
     email: z.string().email(),
@@ -69,39 +60,58 @@ export const registerConsumer = asyncHandler(async (req, res) => {
     });
 });
 
-export const registerVendor = asyncHandler(async (req, res) => {
-    const data = registerVendorSchema.parse(req.body);
+export const googleLogin = asyncHandler(async (req, res) => {
+    const { idToken } = googleLoginSchema.parse(req.body);
 
-    const existing = await prisma.account.findUnique({
-        where: { email: data.email },
-    });
-    if (existing) throw new ApiError(409, "Email already registered");
+    const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    let payload;
+    try {
+        const response = await fetch(tokenInfoUrl);
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new ApiError(400, errBody.error_description || "Invalid Google ID token");
+        }
+        payload = await response.json();
+    } catch (err) {
+        if (err instanceof ApiError) throw err;
+        throw new ApiError(400, "Failed to verify Google ID token with Google API: " + err.message);
+    }
 
-    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+    const { email, name, picture, sub: googleId } = payload;
+    if (!email) {
+        throw new ApiError(400, "Google token does not contain email claim");
+    }
 
-    // Account + Vendor profile created together — a Vendor row without an
-    // Account makes no sense, and vice versa for role=VENDOR.
-    const account = await prisma.account.create({
-        data: {
-            email: data.email,
-            passwordHash,
-            fullName: data.fullName,
-            phone: data.phone,
-            role: Role.VENDOR,
-            vendor: {
-                create: {
-                    businessName: data.businessName,
-                    category: data.category,
-                    region: data.region,
-                    priceMin: data.priceMin,
-                    priceMax: data.priceMax,
-                },
-            },
+    let account = await prisma.account.findFirst({
+        where: {
+            OR: [
+                { googleId },
+                { email }
+            ]
         },
-        include: { vendor: true },
+        include: { vendor: true }
     });
 
-    res.status(201).json({
+    if (!account) {
+        account = await prisma.account.create({
+            data: {
+                email,
+                fullName: name || "Google User",
+                profileImageUrl: picture || null,
+                googleId,
+                role: Role.CONSUMER,
+            },
+            include: { vendor: true }
+        });
+    } else if (!account.googleId) {
+        account = await prisma.account.update({
+            where: { id: account.id },
+            data: { googleId, profileImageUrl: account.profileImageUrl || picture },
+            include: { vendor: true }
+        });
+    }
+
+    res.json({
         token: signToken(account),
         account: sanitize(account),
     });
@@ -115,6 +125,10 @@ export const login = asyncHandler(async (req, res) => {
         include: { vendor: true },
     });
     if (!account) throw new ApiError(401, "Invalid email or password");
+
+    if (!account.passwordHash) {
+        throw new ApiError(401, "This account was registered using Google. Please sign in with Google.");
+    }
 
     const valid = await bcrypt.compare(data.password, account.passwordHash);
     if (!valid) throw new ApiError(401, "Invalid email or password");

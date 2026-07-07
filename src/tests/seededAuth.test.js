@@ -1,7 +1,8 @@
 import { describe, it, afterAll, expect, beforeEach } from "vitest";
-import { api, db, authApi, seedSeededUsers } from "./helpers.js";
+import { api, db, authApi, seedSeededUsers, resetDB } from "./helpers.js";
 
 beforeEach(async () => {
+  await resetDB();
   await seedSeededUsers();
 });
 
@@ -34,7 +35,8 @@ describe("POST /auth/login with Seeded Users", () => {
       .expect(200);
 
     expect(res.body).toHaveProperty("token");
-    expect(res.body.account.role).toBe("VENDOR");
+    expect(res.body.account.role).toBe("CONSUMER");
+    expect(res.body.account.vendor).toBeDefined();
   });
 
   it("can access protected routes with signed token", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, beforeAll } from "vitest";
-import { api, authApi, seedSeededUsers, db } from "./helpers.js";
+import { api, authApi, seedSeededUsers, db, resetDB } from "./helpers.js";
 import { performance } from "perf_hooks";
 
 describe("API Security and Performance Testing", () => {
@@ -8,10 +8,8 @@ describe("API Security and Performance Testing", () => {
   let adminToken; // Admin token requires registering one or mocking
 
   beforeAll(async () => {
-    // Only seed if they don't already exist to avoid unique constraint errors
-    try {
-      await seedSeededUsers();
-    } catch (e) { /* Ignore if already seeded */ }
+    await resetDB();
+    await seedSeededUsers();
 
     // Login as seeded consumer
     const consumerRes = await api.post("/auth/login").send({
@@ -54,9 +52,10 @@ describe("API Security and Performance Testing", () => {
     const end = performance.now();
     const duration = end - start;
     
-    // If testing against remote Vercel API, expect network latency (~500ms).
-    // If running locally, expect it to be fast (<30ms).
-    const maxDuration = process.env.TEST_API_URL ? 1000 : 30;
+    // If testing against remote Vercel API, expect network latency (~1000ms).
+    // If running locally, expect it to be fast, but allow up to 250ms because
+    // Shopee-style vendor checks now require querying the database (Supabase over the network).
+    const maxDuration = process.env.TEST_API_URL ? 1000 : 250;
     expect(duration).toBeLessThan(maxDuration);
     return response;
   };
@@ -81,7 +80,7 @@ describe("API Security and Performance Testing", () => {
           // Use a token that does NOT have the required role
           let unauthorizedToken;
           if (requiredRole === "VENDOR") unauthorizedToken = consumerToken;
-          if (requiredRole === "CONSUMER") unauthorizedToken = vendorToken;
+          if (requiredRole === "CONSUMER") unauthorizedToken = adminToken;
           if (requiredRole === "ADMIN") unauthorizedToken = consumerToken;
 
           let req;

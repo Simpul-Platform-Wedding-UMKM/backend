@@ -1,4 +1,10 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+
+if (process.env.NODE_ENV === "test") {
+    dotenv.config({ path: ".env.test", override: true });
+} else {
+    dotenv.config();
+}
 
 if (!process.env.JWT_SECRET) {
     throw new Error("Missing required env var: JWT_SECRET");

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "../../lib/prisma.js";
 import { env } from "../../config/env.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
@@ -33,9 +34,10 @@ export const createPayment = asyncHandler(async (req, res) => {
       bookingId: booking.id,
       totalAmount,
       platformFee,
-      pjpProvider: "xendit",
+      pjpProvider: env.pjpProvider,
       pjpTransactionId: gateway.pjpTransactionId,
       qrisString: gateway.qrisString,
+      qrisImageUrl: gateway.qrisImageUrl || gateway.qrisString || null,
       expiresAt: gateway.expiresAt,
       splits: { create: splitsData },
     },
@@ -76,6 +78,60 @@ export const xenditWebhook = asyncHandler(async (req, res) => {
   // Fire and forget from the webhook's point of view — Xendit just wants a
   // fast 200. Disbursement failures are handled/logged inside settlePayment.
   settlePayment(payment.id).catch((err) => console.error("settlePayment failed:", err));
+
+  res.status(200).json({ received: true });
+});
+
+function verifyMidtransSignature(payload) {
+  const { order_id, status_code, gross_amount, signature_key } = payload;
+  const hashSource = `${order_id}${status_code}${gross_amount}${env.midtransServerKey}`;
+  const calculatedSignature = crypto.createHash("sha512").update(hashSource).digest("hex");
+  return calculatedSignature === signature_key;
+}
+
+export const midtransWebhook = asyncHandler(async (req, res) => {
+  const payload = req.body;
+
+  const verified = verifyMidtransSignature(payload);
+  if (!verified) {
+    throw new ApiError(401, "Invalid signature key");
+  }
+
+  const { order_id, transaction_status, transaction_id } = payload;
+  const bookingId = order_id.split("_")[0];
+
+  if (transaction_status === "settlement" || transaction_status === "capture") {
+    const payment = await prisma.payment.findUnique({
+      where: { bookingId },
+    });
+    if (!payment) {
+      throw new ApiError(404, "Payment not found");
+    }
+
+    if (payment.status !== "PAID") {
+      const updatedPayment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: "PAID",
+          paidAt: new Date(),
+          pjpTransactionId: transaction_id,
+        },
+      });
+
+      settlePayment(updatedPayment.id).catch((err) =>
+        console.error("settlePayment failed:", err)
+      );
+    }
+  } else if (
+    transaction_status === "expire" ||
+    transaction_status === "cancel" ||
+    transaction_status === "deny"
+  ) {
+    await prisma.payment.updateMany({
+      where: { bookingId },
+      data: { status: "FAILED" },
+    });
+  }
 
   res.status(200).json({ received: true });
 });

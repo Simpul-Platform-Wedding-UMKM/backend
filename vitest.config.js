@@ -1,4 +1,8 @@
 import { defineConfig } from "vitest/config";
+import dotenv from "dotenv";
+
+// Force load .env.test variables to override development variables for all test processes
+dotenv.config({ path: ".env.test", override: true });
 
 export default defineConfig({
   test: {
@@ -6,10 +10,6 @@ export default defineConfig({
     // wiping data that another file just wrote. This is the Vitest 4 way
     // (replaces the removed poolOptions.forks.singleFork).
     fileParallelism: false,
-
-    // Load .env.test instead of .env so tests hit a separate test DB.
-    // Copy .env.test.example → .env.test and set DATABASE_URL there.
-    envFile: ".env.test",
 
     // Global test helpers available in every file without importing
     globals: true,

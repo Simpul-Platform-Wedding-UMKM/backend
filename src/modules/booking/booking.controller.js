@@ -54,20 +54,22 @@ export const getBooking = asyncHandler(async (req, res) => {
   });
   if (!booking) throw new ApiError(404, "Booking not found");
 
-  const { role, id: accountId } = req.account;
+  const { id: accountId, role } = req.account;
 
-  if (role === "CONSUMER") {
-    // Consumer can only see bookings that belong to their wedding project
-    if (booking.weddingProject.accountId !== accountId) {
-      throw new ApiError(403, "Not your booking");
+  if (role === "ADMIN") {
+    // ADMIN can see all bookings
+  } else {
+    const isConsumer = booking.weddingProject.accountId === accountId;
+    if (isConsumer) {
+      // Allowed
+    } else {
+      const vendor = await prisma.vendor.findUnique({ where: { accountId } });
+      const hasItem = vendor ? booking.items.some((i) => i.vendorId === vendor.id) : false;
+      if (!hasItem) {
+        throw new ApiError(403, "Not your booking");
+      }
     }
-  } else if (role === "VENDOR") {
-    // Vendor can only see bookings that include one of their items
-    const vendor = await prisma.vendor.findUnique({ where: { accountId } });
-    const hasItem = booking.items.some((i) => i.vendorId === vendor?.id);
-    if (!hasItem) throw new ApiError(403, "Not your booking");
   }
-  // ADMIN can see all bookings
 
   res.json(booking);
 });
