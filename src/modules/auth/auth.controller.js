@@ -5,7 +5,6 @@ import { Role } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { env } from "../../config/env.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
-import { CATEGORIES } from "../../lib/categories.js";
 
 const BCRYPT_ROUNDS = process.env.NODE_ENV === "test" ? 4 : 10;
 

@@ -21,18 +21,17 @@ export const api = request(process.env.TEST_API_URL || app);
 export const db = prisma;
 
 export async function resetDB() {
-  console.log("resetDB called. DATABASE_URL =", process.env.DATABASE_URL);
-  const searchPath = await db.$queryRaw`SHOW search_path`;
-  console.log("resetDB SHOW search_path:", searchPath);
-  const tablenames = await db.$queryRaw`
-    SELECT tablename FROM pg_tables WHERE schemaname='test'
-  `;
-  console.log("resetDB found tables in 'test' schema:", tablenames);
+  const schemaMatch = process.env.DATABASE_URL ? process.env.DATABASE_URL.match(/[?&]schema=([^&]+)/) : null;
+  const activeSchema = schemaMatch ? schemaMatch[1] : "public";
+
+  const tablenames = await db.$queryRawUnsafe(`
+    SELECT tablename FROM pg_tables WHERE schemaname='${activeSchema}'
+  `);
 
   const tables = tablenames
     .map(({ tablename }) => tablename)
     .filter((name) => name !== "_prisma_migrations")
-    .map((name) => `"test"."${name}"`)
+    .map((name) => `"${activeSchema}"."${name}"`)
     .join(", ");
 
   if (tables.length > 0) {

@@ -1,11 +1,7 @@
 import dotenv from "dotenv";
 import { Pool } from "pg";
 
-if (process.env.NODE_ENV === "test") {
-  dotenv.config({ path: ".env.test", override: true });
-} else {
-  dotenv.config();
-}
+dotenv.config();
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 

@@ -1,8 +1,7 @@
 import { defineConfig } from "vitest/config";
 import dotenv from "dotenv";
 
-// Force load .env.test variables to override development variables for all test processes
-dotenv.config({ path: ".env.test", override: true });
+dotenv.config();
 
 export default defineConfig({
   test: {
