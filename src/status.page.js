@@ -51,7 +51,7 @@ export const statusPage = `<!doctype html>
   <div class="card">
     <div class="row"><span class="label">API</span><span class="value"><span id="apiBadge" class="badge pending">CHECKING</span></span></div>
     <div class="row"><span class="label">Database</span><span class="value"><span id="dbBadge" class="badge pending">CHECKING</span></span></div>
-    <div class="row"><span class="label">Uptime</span><span class="value" id="uptime">—</span></div>
+    <div class="row"><span class="label">Platform</span><span class="value">Vercel Serverless</span></div>
     <div class="row"><span class="label">Last checked</span><span class="value" id="checked">—</span></div>
   </div>
   <button id="pingBtn" type="button">Ping now</button>
@@ -62,10 +62,6 @@ export const statusPage = `<!doctype html>
     el.className = "badge " + state;
     el.textContent = state === "up" ? "UP" : state === "down" ? "DOWN" : "CHECKING";
   }
-  function fmtUptime(s) {
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
-    return h + "h " + m + "m " + sec + "s";
-  }
   async function check() {
     const apiBadge = document.getElementById("apiBadge");
     const dbBadge = document.getElementById("dbBadge");
@@ -75,10 +71,8 @@ export const statusPage = `<!doctype html>
       const data = await res.json();
       badge(apiBadge, res.ok ? "up" : "down");
       badge(dbBadge, data.db === "up" ? "up" : "down");
-      document.getElementById("uptime").textContent = fmtUptime(data.uptime ?? 0);
     } catch {
       badge(apiBadge, "down"); badge(dbBadge, "down");
-      document.getElementById("uptime").textContent = "—";
     }
     document.getElementById("checked").textContent = new Date().toLocaleTimeString();
   }

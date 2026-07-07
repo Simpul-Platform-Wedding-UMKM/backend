@@ -7,6 +7,8 @@ import { env } from "../../config/env.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { CATEGORIES } from "../../lib/categories.js";
 
+const BCRYPT_ROUNDS = process.env.NODE_ENV === "test" ? 4 : 10;
+
 const registerConsumerSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
@@ -50,7 +52,7 @@ export const registerConsumer = asyncHandler(async (req, res) => {
     });
     if (existing) throw new ApiError(409, "Email already registered");
 
-    const passwordHash = await bcrypt.hash(data.password, 10);
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
     const account = await prisma.account.create({
         data: {
             email: data.email,
@@ -75,7 +77,7 @@ export const registerVendor = asyncHandler(async (req, res) => {
     });
     if (existing) throw new ApiError(409, "Email already registered");
 
-    const passwordHash = await bcrypt.hash(data.password, 10);
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
 
     // Account + Vendor profile created together — a Vendor row without an
     // Account makes no sense, and vice versa for role=VENDOR.

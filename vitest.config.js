@@ -14,6 +14,8 @@ export default defineConfig({
     // Global test helpers available in every file without importing
     globals: true,
 
+    setupFiles: ["src/tests/setup.js"],
+
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],

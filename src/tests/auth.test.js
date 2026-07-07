@@ -8,12 +8,7 @@
  */
 
 import { describe, it, beforeEach, afterAll, expect } from "vitest";
-import { api, db, resetDB, registerConsumer } from "./helpers.js";
-
-// Wipe the DB before every test — like RefreshDatabase
-beforeEach(async () => {
-  await resetDB();
-});
+import { api, db, registerConsumer } from "./helpers.js";
 
 // Close the DB connection after all tests finish
 afterAll(async () => {

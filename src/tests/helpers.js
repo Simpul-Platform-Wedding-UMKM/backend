@@ -14,32 +14,45 @@ import { prisma } from "../lib/prisma.js";
 
 // ── HTTP client ───────────────────────────────────────────────────────────────
 // `request(app)` works like $this->postJson() in Laravel.
-// Call it fresh each test — Supertest creates the HTTP server on-demand.
-export const api = request(app);
+// If TEST_API_URL is provided, it tests a remote environment (e.g. Vercel).
+export const api = request(process.env.TEST_API_URL || app);
 
 // ── Database ──────────────────────────────────────────────────────────────────
 export const db = prisma;
 
-// ── Reset the DB between tests ────────────────────────────────────────────────
-// Deletes rows in dependency order (children before parents).
-// Works like Laravel's RefreshDatabase trait.
-export async function resetDB() {
-  // Use a transaction to make the truncate atomic
-  await db.$transaction([
-    db.aiRecommendationLog.deleteMany(),
-    db.review.deleteMany(),
-    db.dispute.deleteMany(),
-    db.paymentSplit.deleteMany(),
-    db.payment.deleteMany(),
-    db.bookingItem.deleteMany(),
-    db.booking.deleteMany(),
-    db.budgetAllocation.deleteMany(),
-    db.weddingProject.deleteMany(),
-    db.vendorService.deleteMany(),
-    db.featuredSlot.deleteMany(),
-    db.vendor.deleteMany(),
-    db.account.deleteMany(),
-  ]);
+
+
+// ── Seed specific test accounts from seed.ts ───────────────────────────────
+export async function seedSeededUsers() {
+  // Seed standard dummy consumer from seed.ts
+  await db.account.create({
+    data: {
+      email: "davin@demo.simpul",
+      passwordHash: "password123", // mocked bcryptjs makes this match password123
+      fullName: "Davin & Partner",
+      role: "CONSUMER",
+    },
+  });
+
+  // Seed standard dummy vendor from seed.ts
+  await db.account.create({
+    data: {
+      email: "rara.makeup.studio@demo.simpul",
+      passwordHash: "password123", // mocked bcryptjs makes this match password123
+      fullName: "Rara Makeup Studio",
+      role: "VENDOR",
+      vendor: {
+        create: {
+          businessName: "Rara Makeup Studio",
+          category: "MUA",
+          region: "Purwokerto",
+          priceMin: 1500000,
+          priceMax: 5000000,
+          kybVerified: true,
+        },
+      },
+    },
+  });
 }
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -51,7 +64,7 @@ export async function resetDB() {
  */
 export async function registerConsumer(overrides = {}) {
   const payload = {
-    email: "consumer@test.com",
+    email: `consumer-${Date.now()}-${Math.random().toString(36).substring(7)}@test.com`,
     password: "password123",
     fullName: "Test Consumer",
     ...overrides,
@@ -66,7 +79,7 @@ export async function registerConsumer(overrides = {}) {
  */
 export async function registerVendor(overrides = {}) {
   const payload = {
-    email: "vendor@test.com",
+    email: `vendor-${Date.now()}-${Math.random().toString(36).substring(7)}@test.com`,
     password: "password123",
     fullName: "Test Vendor",
     businessName: "Test Studio",

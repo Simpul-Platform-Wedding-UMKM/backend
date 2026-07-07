@@ -2,12 +2,8 @@
  * Vendor API tests — search, profile update, service creation.
  */
 
-import { describe, it, beforeEach, afterAll, expect } from "vitest";
-import { api, db, resetDB, registerConsumer, registerVendor, authApi } from "./helpers.js";
-
-beforeEach(async () => {
-  await resetDB();
-});
+import { describe, it, expect, afterAll } from "vitest";
+import { api, db, registerConsumer, registerVendor, authApi } from "./helpers.js";
 
 afterAll(async () => {
   await db.$disconnect();
