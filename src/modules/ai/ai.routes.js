@@ -4,4 +4,4 @@ import { getRecommendation } from "./ai.controller.js";
 
 export const aiRouter = Router();
 
-aiRouter.post("/recommend", requireAuth, requireRole("CONSUMER"), getRecommendation);
+aiRouter.post("/recommend", requireAuth, requireRole("CONSUMER", "VENDOR"), getRecommendation);
