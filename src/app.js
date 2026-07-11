@@ -20,6 +20,7 @@ import { bookingRouter } from "./modules/booking/booking.routes.js";
 import { paymentRouter } from "./modules/payment/payment.routes.js";
 import { webhookRouter } from "./modules/payment/webhook.routes.js";
 import { aiRouter } from "./modules/ai/ai.routes.js";
+import { adminRouter } from "./modules/admin/admin.routes.js";
 import { disputeRouter } from "./modules/dispute/dispute.routes.js";
 import { reviewRouter } from "./modules/review/review.routes.js";
 
@@ -76,6 +77,7 @@ app.use("/auth", authRateLimit, authRouter);
 app.use("/vendors", vendorRouter);
 app.use("/budget", budgetRouter);
 app.use("/bookings", bookingRouter);
+app.use("/", adminRouter);
 app.use("/", paymentRouter); // exposes /bookings/:id/payment and /payments/:id
 app.use("/ai", aiRouter);
 app.use("/disputes", disputeRouter);

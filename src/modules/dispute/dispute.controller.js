@@ -71,3 +71,70 @@ export const resolveDispute = asyncHandler(async (req, res) => {
 
   res.json(updated);
 });
+
+export const getDisputes = asyncHandler(async (req, res) => {
+  const disputes = await prisma.dispute.findMany({
+    include: {
+      bookingItem: {
+        include: {
+          booking: true,
+          vendor: true,
+        },
+      },
+      raisedBy: { select: { id: true, fullName: true, email: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const result = disputes.map((d) => ({
+    id: d.id,
+    bookingItemId: d.bookingItemId,
+    bookingId: d.bookingItem.booking.id,
+    vendorId: d.bookingItem.vendorId,
+    buyerId: d.raisedById,
+    status: d.status,
+    reason: d.reason,
+    description: d.reason,
+    evidence: d.evidenceUrls,
+    resolutionType: d.status === "RESOLVED" ? "RESOLVED" : undefined,
+    resolutionNotes: d.resolution || undefined,
+    resolvedAt: d.resolvedAt?.toISOString() || undefined,
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.createdAt.toISOString(),
+  }));
+
+  res.json(result);
+});
+
+export const getDisputeById = asyncHandler(async (req, res) => {
+  const dispute = await prisma.dispute.findUnique({
+    where: { id: req.params.id },
+    include: {
+      bookingItem: {
+        include: {
+          booking: true,
+          vendor: true,
+        },
+      },
+      raisedBy: { select: { id: true, fullName: true, email: true } },
+    },
+  });
+  if (!dispute) throw new ApiError(404, "Dispute not found");
+
+  res.json({
+    id: dispute.id,
+    bookingItemId: dispute.bookingItemId,
+    bookingId: dispute.bookingItem.booking.id,
+    vendorId: dispute.bookingItem.vendorId,
+    buyerId: dispute.raisedById,
+    status: dispute.status,
+    reason: dispute.reason,
+    description: dispute.reason,
+    evidence: dispute.evidenceUrls,
+    resolutionType: dispute.status === "RESOLVED" ? "RESOLVED" : undefined,
+    resolutionNotes: dispute.resolution || undefined,
+    resolvedAt: dispute.resolvedAt?.toISOString() || undefined,
+    createdAt: dispute.createdAt.toISOString(),
+    updatedAt: dispute.createdAt.toISOString(),
+  });
+});
