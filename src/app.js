@@ -46,7 +46,7 @@ app.use(
   })
 );
 
-app.options('*', cors());
+// CORS preflight is handled automatically by the cors() middleware above
 app.use(securityHeaders);
 app.use(globalRateLimit);
 app.use(morgan("dev"));
