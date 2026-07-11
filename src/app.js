@@ -28,9 +28,27 @@ export const app = express();
 // Trust Vercel's proxy layer so req.ip is the real client IP (needed for rate limiting)
 app.set("trust proxy", 1);
 
+
+const allowedOrigins = env.allowedOrigins;
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Origin ' + origin + ' not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+app.options('*', cors());
 app.use(securityHeaders);
 app.use(globalRateLimit);
-app.use(cors({ origin: env.corsOrigin }));
 app.use(morgan("dev"));
 app.use(express.json({ limit: bodyLimit }));
 app.use(sanitizeQuery);
