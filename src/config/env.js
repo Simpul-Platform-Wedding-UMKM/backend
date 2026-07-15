@@ -20,6 +20,7 @@ export const env = {
 
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    aiServiceUrl: process.env.AI_SERVICE_URL ?? "http://localhost:8000",
 
     platformFeeBps: Number(process.env.PLATFORM_FEE_BPS ?? 75), // 75 bps = 0.75%, mid-point of the proposal's 0.5–1%
 };

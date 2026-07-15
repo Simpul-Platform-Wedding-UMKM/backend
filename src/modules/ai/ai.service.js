@@ -1,86 +1,141 @@
-import OpenAI from "openai";
 import { env } from "../../config/env.js";
 import { prisma } from "../../lib/prisma.js";
 
-const openai = new OpenAI({ apiKey: env.openaiApiKey });
+// ---------------------------------------------------------------------------
+// AI Service client — calls the FastAPI AI microservice
+// ---------------------------------------------------------------------------
 
-// Step 1: Retrieval. Filter the DB FIRST, before the LLM ever sees
-// anything — this is what section 3.5.2's risk table means by
-// "Pembatasan knowledge base AI hanya pada database vendor terverifikasi
-// dan pembatasan harga riil pasar." The model never gets to invent a
-// vendor; it can only choose among rows that actually exist and are
-// KYB-verified.
+async function callAiService(endpoint, body) {
+    const url = `${env.aiServiceUrl}${endpoint}`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+        const errorBody = await res.text().catch(() => "");
+        throw new Error(`AI service returned ${res.status}: ${errorBody}`);
+    }
+    return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Understand user message
+// ---------------------------------------------------------------------------
+
+export async function understandMessage(message, sessionId = "") {
+    return callAiService("/understand", {
+        message,
+        sessionId,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Step 2: Query database (Express owns Prisma — AI service never touches it)
+// ---------------------------------------------------------------------------
+
 async function retrieveCandidates({ region, categories, budgetPerCategory }) {
-  const services = await prisma.vendorService.findMany({
-    where: {
-      isActive: true,
-      vendor: {
-        kybVerified: true,
-        ...(region && { region: { equals: region, mode: "insensitive" } }),
-        ...(categories?.length && { category: { in: categories } }),
-      },
-      ...(budgetPerCategory && { price: { lte: budgetPerCategory * 1.15 } }), // small headroom, final filtering happens below
-    },
-    include: { vendor: true },
-    take: 60, // cap what we send to the LLM — keeps prompt small and predictable
-  });
+    const services = await prisma.vendorService.findMany({
+        where: {
+            isActive: true,
+            vendor: {
+                kybVerified: true,
+                ...(region && { region: { equals: region, mode: "insensitive" } }),
+                ...(categories?.length && { category: { in: categories } }),
+            },
+            ...(budgetPerCategory && { price: { lte: budgetPerCategory * 1.15 } }),
+        },
+        include: { vendor: true },
+        take: 60,
+    });
 
-  return services.map((s) => ({
-    vendorServiceId: s.id,
-    vendorId: s.vendorId,
-    vendorName: s.vendor.businessName,
-    category: s.vendor.category,
-    serviceName: s.name,
-    price: s.price,
-    region: s.vendor.region,
-    ratingAvg: s.vendor.ratingAvg,
-  }));
+    return services.map((s) => ({
+        vendorServiceId: s.id,
+        vendorId: s.vendorId,
+        vendorName: s.vendor.businessName,
+        category: s.vendor.category,
+        serviceName: s.name,
+        price: s.price,
+        region: s.vendor.region,
+        ratingAvg: s.vendor.ratingAvg,
+    }));
 }
 
-const SYSTEM_PROMPT = `You are the SIMPUL Wedding Assistant. You recommend a vendor package for an
-Indonesian wedding using ONLY the candidate list provided in the user message — never invent a
-vendor, service, or price that isn't in that list. Pick at most one service per requested category,
-staying within the couple's total budget. Respond with strict JSON matching this shape:
-{
-  "packages": [
-    { "category": string, "vendorServiceId": string, "reasoning": string }
-  ],
-  "totalPrice": number,
-  "notes": string
+// ---------------------------------------------------------------------------
+// Step 3: Generate natural-language reply from structured data
+// ---------------------------------------------------------------------------
+
+export async function generateReply({ intent, entities, context, data, sessionId = "" }) {
+    return callAiService("/generate", {
+        intent,
+        entities,
+        context: context || {},
+        data: data || {},
+        sessionId,
+    });
 }
-If no candidate fits a category within budget, omit that category from "packages" and explain why in "notes".`;
 
-export async function recommendPackage({ totalBudget, guestCount, location, themePref, categories }) {
-  const budgetPerCategory = categories?.length ? Math.floor(totalBudget / categories.length) : undefined;
-  const candidates = await retrieveCandidates({ region: location, categories, budgetPerCategory });
+// ---------------------------------------------------------------------------
+// Full pipeline: understand → query DB → generate
+// ---------------------------------------------------------------------------
 
-  const userPrompt = JSON.stringify({
+export async function recommendPackage({
+    message,
     totalBudget,
     guestCount,
     location,
     themePref,
-    requestedCategories: categories,
-    candidates,
-  });
+    categories,
+    sessionId,
+}) {
+    // Step 1: Understand
+    const understanding = await understandMessage(message, sessionId);
+    const { intent, entities } = understanding;
 
-  const completion = await openai.chat.completions.create({
-    model: env.openaiModel,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-  });
+    // Step 2: Query database (Express owns Prisma)
+    const budgetPerCategory = categories?.length
+        ? Math.floor(totalBudget / categories.length)
+        : undefined;
+    const candidates = await retrieveCandidates({
+        region: entities.city || location,
+        categories,
+        budgetPerCategory,
+    });
 
-  const recommendation = JSON.parse(completion.choices[0].message.content);
+    // Step 3: Generate natural reply
+    const generation = await generateReply({
+        intent,
+        entities,
+        context: {
+            totalBudget: totalBudget.toString(),
+            guestCount: guestCount?.toString(),
+            location: location || "",
+            themePref: themePref || "",
+        },
+        data: {
+            candidates,
+            categories: categories || [],
+        },
+        sessionId,
+    });
 
-  // Cross-check the LLM's output against the candidate list one more time
-  // before it ever reaches the user — belt-and-suspenders against the
-  // model hallucinating an id that looks plausible but isn't real.
-  const validIds = new Set(candidates.map((c) => c.vendorServiceId));
-  recommendation.packages = (recommendation.packages ?? []).filter((p) =>
-    validIds.has(p.vendorServiceId)
-  );
-
-  return { recommendation, candidateVendorIds: candidates.map((c) => c.vendorId) };
+    return {
+        recommendation: {
+            packages: candidates.map((c) => ({
+                vendorServiceId: c.vendorServiceId,
+                vendorId: c.vendorId,
+                category: c.category,
+                vendorName: c.vendorName,
+                serviceName: c.serviceName,
+                price: c.price,
+                region: c.region,
+                ratingAvg: c.ratingAvg,
+            })),
+            totalBudget,
+            notes: generation.reply,
+        },
+        candidateVendorIds: candidates.map((c) => c.vendorId),
+        understanding: { intent, entities, intentSource: understanding.intent_source },
+    };
 }
