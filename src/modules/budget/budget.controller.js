@@ -83,3 +83,41 @@ export const setBudgetAllocations = asyncHandler(async (req, res) => {
     });
     res.json(updated);
 });
+
+// ---------------------------------------------------------------------------
+// Gap E: manual expense logging
+// ---------------------------------------------------------------------------
+
+async function assertProject(projectId, accountId) {
+    const project = await prisma.weddingProject.findFirst({
+        where: { id: projectId, accountId },
+    });
+    if (!project) throw new ApiError(404, "Wedding project not found");
+    return project;
+}
+
+const expenseSchema = z.object({
+    category: z.enum(CATEGORIES),
+    title: z.string().min(1).max(120),
+    amount: z.number().int().positive(),
+});
+
+// POST /budget/projects/:projectId/expenses
+export const addExpense = asyncHandler(async (req, res) => {
+    const data = expenseSchema.parse(req.body);
+    await assertProject(req.params.projectId, req.account.id);
+    const expense = await prisma.budgetExpense.create({
+        data: { ...data, weddingProjectId: req.params.projectId },
+    });
+    res.status(201).json(expense);
+});
+
+// GET /budget/projects/:projectId/expenses
+export const listExpenses = asyncHandler(async (req, res) => {
+    await assertProject(req.params.projectId, req.account.id);
+    const expenses = await prisma.budgetExpense.findMany({
+        where: { weddingProjectId: req.params.projectId },
+        orderBy: { createdAt: "desc" },
+    });
+    res.json(expenses);
+});

@@ -11,7 +11,7 @@ async function callAiService(endpoint, body) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) {
         const errorBody = await res.text().catch(() => "");
@@ -35,7 +35,7 @@ export async function understandMessage(message, sessionId = "") {
 // Step 2: Query database (Express owns Prisma — AI service never touches it)
 // ---------------------------------------------------------------------------
 
-async function retrieveCandidates({ region, categories, budgetPerCategory }) {
+export async function retrieveCandidates({ region, categories, budgetPerCategory }) {
     const services = await prisma.vendorService.findMany({
         where: {
             isActive: true,
@@ -72,6 +72,17 @@ export async function generateReply({ intent, entities, context, data, sessionId
         entities,
         context: context || {},
         data: data || {},
+        sessionId,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Simple chat — no DB query, for general conversation
+// ---------------------------------------------------------------------------
+
+export async function chatSimple(message, sessionId = "") {
+    return callAiService("/chat", {
+        message,
         sessionId,
     });
 }

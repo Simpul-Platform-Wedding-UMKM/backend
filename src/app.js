@@ -24,6 +24,8 @@ import { adminRouter } from "./modules/admin/admin.routes.js";
 import { disputeRouter } from "./modules/dispute/dispute.routes.js";
 import { internalRouter } from "./modules/internal/internal.routes.js";
 import { reviewRouter } from "./modules/review/review.routes.js";
+import { chatRouter } from "./modules/chat/chat.routes.js";
+import { vendorOrdersRouter } from "./modules/vendor-orders/orders.routes.js";
 
 export const app = express();
 
@@ -84,6 +86,8 @@ app.use("/ai", aiRouter);
 app.use("/internal", internalRouter);
 app.use("/disputes", disputeRouter);
 app.use("/reviews", reviewRouter);
+app.use("/chats", chatRouter);
+app.use("/vendor", vendorOrdersRouter);
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);

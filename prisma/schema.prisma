@@ -65,6 +65,13 @@ enum VendorCategory {
   OTHER
 }
 
+enum KybStatus {
+  UNSUBMITTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 enum SubscriptionTier {
   FREE
   PREMIUM
@@ -87,8 +94,24 @@ model Vendor {
   ratingCount     Int     @default(0)
   profileImageUrl String?
 
-  // KYB — referenced directly in the proposal's risk mitigation table
   kybVerified Boolean @default(false)
+  kybStatus   KybStatus @default(UNSUBMITTED)
+  ktpUrl         String?
+  npwpUrl        String?
+  siupUrl        String?
+  mouUrl         String?
+  rejectedReason String?
+
+  // Social / profile extras (gap D)
+  bannerImageUrl String?
+  whatsapp       String?
+  instagram      String?
+  website        String?
+
+  // Premium (gap F) — SEO target kecamatans + AI ad-slot bid
+  seoKecamatans String[] @default([])
+  adSlotActive  Boolean  @default(false)
+  adBidAmount   Int      @default(500) // IDR per AI recommendation click
 
   // Where the vendor's share of a split payment actually lands.
   // SIMPUL only ever stores this as routing metadata — see Payment/PaymentSplit below.
@@ -131,6 +154,57 @@ model VendorService {
   @@map("vendor_services")
 }
 
+// Manual expense entry on the budget planner — independent of Bookings
+// (covers the friend's gap E: "Beli Souvenir Tambahan Rp2.000.000").
+model BudgetExpense {
+  id               String         @id @default(cuid())
+  weddingProjectId String
+  weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
+  category         VendorCategory
+  title            String
+  amount           Int // IDR
+  createdAt        DateTime       @default(now())
+
+  @@index([weddingProjectId])
+  @@map("budget_expenses")
+}
+
+// ---------------------------------------------------------------------
+// Chat (MUA ↔ Consumer) — polling-based, no WebSocket
+// ---------------------------------------------------------------------
+
+model ChatRoom {
+  id         String    @id @default(cuid())
+  consumerId String
+  vendorId   String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  messages   Message[]
+
+  @@unique([consumerId, vendorId])
+  @@index([consumerId])
+  @@index([vendorId])
+  @@map("chat_rooms")
+}
+
+enum SenderType {
+  CONSUMER
+  VENDOR
+}
+
+model Message {
+  id         String     @id @default(cuid())
+  chatRoomId String
+  chatRoom   ChatRoom   @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  senderId   String
+  senderType SenderType
+  content    String
+  createdAt  DateTime   @default(now())
+
+  @@index([chatRoomId, createdAt])
+  @@map("chat_messages")
+}
+
 // ---------------------------------------------------------------------
 // Wedding Budget Planner (pillar 2)
 // ---------------------------------------------------------------------
@@ -150,6 +224,7 @@ model WeddingProject {
   updatedAt DateTime @updatedAt
 
   budgetAllocations   BudgetAllocation[]
+  expenses            BudgetExpense[]
   bookings            Booking[]
   aiRecommendationLog AiRecommendationLog[]
 
@@ -214,6 +289,7 @@ model BookingItem {
   vendorService   VendorService     @relation(fields: [vendorServiceId], references: [id])
   price           Int // snapshot of VendorService.price at time of booking, in IDR
   status          BookingItemStatus @default(PENDING)
+  milestones      Json? // vendor-defined checklist, e.g. [{title, status, done}]
 
   paymentSplit PaymentSplit?
   dispute      Dispute?
@@ -242,6 +318,11 @@ enum PaymentStatus {
   CANCELLED
 }
 
+enum PaymentType {
+  DP_30
+  FULL_100
+}
+
 enum SettlementStatus {
   PENDING
   SETTLED
@@ -255,6 +336,12 @@ model Payment {
 
   totalAmount Int // sum of all BookingItem.price, in IDR
   platformFee Int // sum of PaymentSplit.platformFeeAmount, in IDR — SIMPUL's only revenue from this transaction
+
+  // Partial-payment tracking (ponytail advice B): a single Booking can be
+  // paid in 1 or 2 installments. DP_30 settles 30% to vendors; the remainder
+  // is recorded as installmentNumber=2 = FULL_100 paid later.
+  paymentType       PaymentType  @default(FULL_100)
+  installmentNumber Int          @default(1)
 
   // References into the PJP Kategori 1 system — never a balance we control
   pjpProvider      String // "xendit" | "midtrans"

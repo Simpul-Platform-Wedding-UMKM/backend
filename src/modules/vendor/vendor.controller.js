@@ -54,6 +54,11 @@ const updateProfileSchema = z
         bankName: z.string().optional(),
         bankAccountNumber: z.string().optional(),
         bankAccountName: z.string().optional(),
+        // Gap D: social / profile extras
+        bannerImageUrl: z.string().url().optional(),
+        whatsapp: z.string().min(5).max(30).optional(),
+        instagram: z.string().min(1).max(60).optional(),
+        website: z.string().url().optional(),
     })
     .refine(
         (d) => {
@@ -123,4 +128,76 @@ export const applyVendor = asyncHandler(async (req, res) => {
     });
 
     res.status(201).json(vendor);
+});
+
+// ---------------------------------------------------------------------------
+// Gap C: KYB document submission
+// ---------------------------------------------------------------------------
+
+const verifySchema = z.object({
+    ktpUrl: z.string().url(),
+    npwpUrl: z.string().url(),
+    siupUrl: z.string().url().optional(),
+    mouUrl: z.string().url().optional(),
+});
+
+// POST /vendors/me/verify — submit KYB documents
+export const submitKyb = asyncHandler(async (req, res) => {
+    const data = verifySchema.parse(req.body);
+    const vendor = await prisma.vendor.update({
+        where: { id: req.vendor.id },
+        data: {
+            ...data,
+            kybStatus: "PENDING",
+            kybVerified: false, // clear stale verified flag if re-submitting
+            rejectedReason: null,
+        },
+    });
+    res.json({
+        status: vendor.kybStatus,
+        submittedAt: vendor.updatedAt,
+        rejectedReason: vendor.rejectedReason,
+    });
+});
+
+// GET /vendors/me/verification
+export const getKybStatus = asyncHandler(async (req, res) => {
+    const v = req.vendor;
+    res.json({
+        status: v.kybStatus,
+        submittedAt: v.kybStatus === "UNSUBMITTED" ? null : v.updatedAt,
+        rejectedReason: v.rejectedReason,
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Gap F: Premium SEO + ad-slot bid
+// ---------------------------------------------------------------------------
+
+const seoSchema = z.object({
+    seoKecamatans: z.array(z.string().min(1).max(80)).max(20),
+});
+export const setPremiumSeo = asyncHandler(async (req, res) => {
+    const { seoKecamatans } = seoSchema.parse(req.body);
+    const vendor = await prisma.vendor.update({
+        where: { id: req.vendor.id },
+        data: { seoKecamatans },
+    });
+    res.json({ seoKecamatans: vendor.seoKecamatans });
+});
+
+const adSlotSchema = z.object({
+    adSlotActive: z.boolean(),
+    adBidAmount: z.number().int().nonnegative().max(100000).optional(),
+});
+export const setAdSlot = asyncHandler(async (req, res) => {
+    const data = adSlotSchema.parse(req.body);
+    const vendor = await prisma.vendor.update({
+        where: { id: req.vendor.id },
+        data,
+    });
+    res.json({
+        adSlotActive: vendor.adSlotActive,
+        adBidAmount: vendor.adBidAmount,
+    });
 });
