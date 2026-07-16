@@ -195,6 +195,34 @@ CREATE TABLE "ai_recommendation_logs" (
 );
 
 -- CreateTable
+CREATE TABLE "login_sessions" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "deviceName" TEXT NOT NULL,
+    "deviceType" TEXT NOT NULL,
+    "ipAddress" TEXT,
+    "location" TEXT,
+    "userAgent" TEXT,
+    "isCurrent" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastActiveAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "login_sessions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "password_reset_tokens" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "used" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "password_reset_tokens_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "featured_slots" (
     "id" TEXT NOT NULL,
     "vendorId" TEXT NOT NULL,
@@ -300,4 +328,19 @@ ALTER TABLE "ai_recommendation_logs" ADD CONSTRAINT "ai_recommendation_logs_wedd
 
 -- AddForeignKey
 ALTER TABLE "featured_slots" ADD CONSTRAINT "featured_slots_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendors"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- CreateIndex
+CREATE UNIQUE INDEX "password_reset_tokens_token_key" ON "password_reset_tokens"("token");
+
+-- CreateIndex
+CREATE INDEX "password_reset_tokens_token_idx" ON "password_reset_tokens"("token");
+
+-- CreateIndex
+CREATE INDEX "login_sessions_accountId_idx" ON "login_sessions"("accountId");
+
+-- AddForeignKey
+ALTER TABLE "password_reset_tokens" ADD CONSTRAINT "password_reset_tokens_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "login_sessions" ADD CONSTRAINT "login_sessions_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

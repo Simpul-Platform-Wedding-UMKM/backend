@@ -102,8 +102,12 @@ export const updateBookingItemStatus = asyncHandler(async (req, res) => {
   res.json(updated);
 });
 export const getBookings = asyncHandler(async (req, res) => {
+  // ponytail: ADMIN sees all, CONSUMER sees own
+  const where = req.account.role === "ADMIN"
+    ? {}
+    : { weddingProject: { accountId: req.account.id } };
   const bookings = await prisma.booking.findMany({
-    where: { weddingProject: { accountId: req.account.id } },
+    where,
     include: {
       items: { include: { vendor: true, vendorService: true, dispute: true } },
       payment: true,

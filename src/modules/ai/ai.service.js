@@ -114,7 +114,14 @@ export async function recommendPackage({
         budgetPerCategory,
     });
 
-    // Step 3: Generate natural reply
+    // Rank candidates before sending to LLM — consistent with chat() endpoint
+    const ranked = [...candidates].sort((a, b) => {
+        if (b.ratingAvg !== a.ratingAvg) return b.ratingAvg - a.ratingAvg;
+        return 0;
+    });
+    const topCandidates = ranked.slice(0, 3);
+
+    // Step 3: Generate natural reply — only send top 3 to keep prompt small
     const generation = await generateReply({
         intent,
         entities,
@@ -125,15 +132,16 @@ export async function recommendPackage({
             themePref: themePref || "",
         },
         data: {
-            candidates,
+            candidates: topCandidates,
             categories: categories || [],
+            totalCount: candidates.length,
         },
         sessionId,
     });
 
     return {
         recommendation: {
-            packages: candidates.map((c) => ({
+            packages: ranked.map((c) => ({
                 vendorServiceId: c.vendorServiceId,
                 vendorId: c.vendorId,
                 category: c.category,

@@ -43,9 +43,11 @@ model Account {
   vendor Vendor?
 
   // 1:many
-  weddingProjects WeddingProject[]
-  disputesRaised  Dispute[]
-  reviews         Review[]
+  weddingProjects      WeddingProject[]
+  disputesRaised       Dispute[]
+  reviews              Review[]
+  loginSessions        LoginSession[]
+  passwordResetTokens  PasswordResetToken[]
 
   @@map("accounts")
 }
@@ -459,9 +461,49 @@ model AiRecommendationLog {
 }
 
 // ---------------------------------------------------------------------
+// Login Sessions — tracks active device sessions for security/privacy
+// ---------------------------------------------------------------------
+
+model LoginSession {
+  id        String @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  deviceName  String // e.g. "Samsung Galaxy S24 Ultra", "Chrome Browser (Mac OS)"
+  deviceType  String // "mobile" | "desktop"
+  ipAddress   String? // IP at login time
+  location    String? // human-readable location, e.g. "Purwokerto, Jawa Tengah"
+  userAgent   String?
+  isCurrent   Boolean @default(true) // ponytail: the session created at login is current; old ones get flipped by a periodic cleanup or explicit revoke
+
+  createdAt   DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([accountId])
+  @@map("login_sessions")
+}
+
+// ---------------------------------------------------------------------
 // Monetization — stretch goal, not needed for the core demo.
 // Wire this up only if the 3 pillars are done and stable.
 // ---------------------------------------------------------------------
+
+// ---------------------------------------------------------------------
+// Auth — password reset tokens
+// ---------------------------------------------------------------------
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@map("password_reset_tokens")
+}
 
 model FeaturedSlot {
   id         String   @id @default(cuid())

@@ -175,6 +175,6 @@ export const chat = asyncHandler(async (req, res) => {
         intent_source,
         entities,
         reply,
-        candidates: isSearch ? candidates : undefined,
+        candidates: isSearch ? ranked : undefined,
     });
 });

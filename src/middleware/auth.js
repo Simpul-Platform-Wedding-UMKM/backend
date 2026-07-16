@@ -42,3 +42,16 @@ export function requireVendor(req, res, next) {
     next();
   }).catch(next);
 }
+
+// ponytail: like requireVendor but doesn't 403 — attaches req.vendor if caller has
+// a vendor profile, passes through otherwise. Used by chat routes where both
+// CONSUMER and VENDOR callers need access (controller branches on req.vendor).
+export function optionalVendor(req, res, next) {
+  if (!req.account) return next();
+  prisma.vendor.findUnique({
+    where: { accountId: req.account.id }
+  }).then((vendor) => {
+    if (vendor) req.vendor = vendor;
+    next();
+  }).catch(next);
+}

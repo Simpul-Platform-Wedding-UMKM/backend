@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 
@@ -50,3 +51,30 @@ function mapSplit(s) {
     updatedAt: s.payment.updatedAt.toISOString(),
   };
 }
+
+// PATCH /payment-splits/:id — admin updates a payment split
+const updatePaymentSplitSchema = z.object({
+  vendorAmount: z.number().int().nonnegative().optional(),
+  platformFeeAmount: z.number().int().nonnegative().optional(),
+  settlementStatus: z.enum(["PENDING", "SETTLED", "FAILED"]).optional(),
+});
+
+export const updatePaymentSplit = asyncHandler(async (req, res) => {
+  const data = updatePaymentSplitSchema.parse(req.body);
+
+  const split = await prisma.paymentSplit.findUnique({ where: { id: req.params.id } });
+  if (!split) throw new ApiError(404, "Payment split not found");
+
+  // ponytail: if settling, set settledAt
+  const settledAt = data.settlementStatus === "SETTLED" ? new Date() : undefined;
+
+  const updated = await prisma.paymentSplit.update({
+    where: { id: req.params.id },
+    data: { ...data, ...(settledAt && { settledAt }) },
+    include: {
+      payment: true,
+      bookingItem: { include: { vendor: true, vendorService: true } },
+    },
+  });
+  res.json(mapSplit(updated));
+});

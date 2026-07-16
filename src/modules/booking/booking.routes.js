@@ -5,7 +5,7 @@ import { createBooking, getBooking, updateBookingItemStatus, getBookings } from 
 export const bookingRouter = Router();
 
 bookingRouter.post("/", requireAuth, requireRole("CONSUMER"), createBooking);
-bookingRouter.get("/", requireAuth, requireRole("CONSUMER"), getBookings);
+bookingRouter.get("/", requireAuth, getBookings);
 bookingRouter.get("/:id", requireAuth, getBooking);
 bookingRouter.patch(
   "/items/:itemId/status",
