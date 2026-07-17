@@ -98,6 +98,8 @@ export const chat = asyncHandler(async (req, res) => {
 
     let reply;
     let candidates = [];
+    let ranked = [];
+    let topCandidates = [];
     let project = null;
 
     if (isSearch) {
@@ -120,7 +122,7 @@ export const chat = asyncHandler(async (req, res) => {
         candidates = allCandidates;
 
         // Rank by relevance and take top 3 for LLM — keeps prompt small & fast
-        const ranked = [...allCandidates].sort((a, b) => {
+        const sorted = [...allCandidates].sort((a, b) => {
             // Rating descending
             if (b.ratingAvg !== a.ratingAvg) return b.ratingAvg - a.ratingAvg;
             // Budget proximity: prefer services within or near budget
@@ -131,7 +133,8 @@ export const chat = asyncHandler(async (req, res) => {
             }
             return 0;
         });
-        const topCandidates = ranked.slice(0, 3);
+        ranked = sorted;
+        topCandidates = sorted.slice(0, 3);
 
         // Generate reply with only top 3 — faster, more focused
         const generation = await generateReply({
@@ -175,6 +178,6 @@ export const chat = asyncHandler(async (req, res) => {
         intent_source,
         entities,
         reply,
-        candidates: isSearch ? ranked : undefined,
+        candidates: isSearch ? topCandidates : undefined,
     });
 });

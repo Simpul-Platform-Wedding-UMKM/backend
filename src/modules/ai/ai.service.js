@@ -7,17 +7,24 @@ import { prisma } from "../../lib/prisma.js";
 
 async function callAiService(endpoint, body) {
     const url = `${env.aiServiceUrl}${endpoint}`;
-    const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) {
-        const errorBody = await res.text().catch(() => "");
-        throw new Error(`AI service returned ${res.status}: ${errorBody}`);
+    try {
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(30000),
+        });
+        if (!res.ok) {
+            const errorBody = await res.text().catch(() => "");
+            throw new Error(`AI service returned ${res.status}: ${errorBody}`);
+        }
+        return res.json();
+    } catch (err) {
+        if (err.name === "TimeoutError" || err.name === "AbortError") {
+            throw new Error("Layanan AI sedang sibuk, silakan coba lagi dalam beberapa saat.");
+        }
+        throw err;
     }
-    return res.json();
 }
 
 // ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ export const getMyWeddingProjects = asyncHandler(async (req, res) => {
     const projects = await prisma.weddingProject.findMany({
         where: { accountId: req.account.id },
         include: { budgetAllocations: true },
+        orderBy: { createdAt: "desc" },
     });
     res.json(projects);
 });
@@ -120,4 +121,34 @@ export const listExpenses = asyncHandler(async (req, res) => {
         orderBy: { createdAt: "desc" },
     });
     res.json(expenses);
+});
+
+// ── Update Wedding Project ────────────────────────────────────────────────
+
+const updateProjectSchema = z.object({
+    totalBudget: z.number().int().positive().optional(),
+    eventDate: z.string().datetime().optional(),
+    guestCount: z.number().int().positive().optional(),
+    location: z.string().optional(),
+    themePref: z.string().optional(),
+});
+
+// PATCH /budget/projects/:projectId
+// Only updates provided fields — can't change accountId
+export const updateWeddingProject = asyncHandler(async (req, res) => {
+    const data = updateProjectSchema.parse(req.body);
+
+    const project = await prisma.weddingProject.findFirst({
+        where: { id: req.params.projectId, accountId: req.account.id },
+    });
+    if (!project) throw new ApiError(404, "Wedding project not found");
+
+    const updated = await prisma.weddingProject.update({
+        where: { id: req.params.projectId },
+        data: {
+            ...data,
+            eventDate: data.eventDate ? new Date(data.eventDate) : undefined,
+        },
+    });
+    res.json(updated);
 });
