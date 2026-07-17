@@ -293,6 +293,24 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     });
 });
 
+// ── Update My Account ─────────────────────────────────────────────────────
+
+const updateMyAccountSchema = z.object({
+    fullName: z.string().min(1).optional(),
+    phone: z.string().optional(),
+    profileImageUrl: z.string().url().optional().nullable(),
+});
+
+export const updateMyAccount = asyncHandler(async (req, res) => {
+    const data = updateMyAccountSchema.parse(req.body);
+    const account = await prisma.account.update({
+        where: { id: req.account.id },
+        data,
+        include: { vendor: true },
+    });
+    res.json({ account: sanitize(account) });
+});
+
 export const resetPassword = asyncHandler(async (req, res) => {
     const { token, newPassword } = resetPasswordSchema.parse(req.body);
 
