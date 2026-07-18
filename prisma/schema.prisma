@@ -48,6 +48,8 @@ model Account {
   reviews              Review[]
   loginSessions        LoginSession[]
   passwordResetTokens  PasswordResetToken[]
+  bookmarks            Bookmark[]
+  cartItems            CartItem[]
 
   @@map("accounts")
 }
@@ -131,6 +133,7 @@ model Vendor {
   bookingItems  BookingItem[]
   reviews       Review[]
   featuredSlots FeaturedSlot[]
+  bookmarks     Bookmark[]
 
   @@index([category, region])
   @@index([priceMin, priceMax])
@@ -151,6 +154,7 @@ model VendorService {
   createdAt   DateTime @default(now())
 
   bookingItems BookingItem[]
+  cartItems    CartItem[]
 
   @@index([vendorId])
   @@map("vendor_services")
@@ -292,6 +296,8 @@ model BookingItem {
   price           Int // snapshot of VendorService.price at time of booking, in IDR
   status          BookingItemStatus @default(PENDING)
   milestones      Json? // vendor-defined checklist, e.g. [{title, status, done}]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   paymentSplit PaymentSplit?
   dispute      Dispute?
@@ -515,4 +521,39 @@ model FeaturedSlot {
 
   @@index([vendorId, endDate])
   @@map("featured_slots")
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  accountId String
+  vendorId  String
+  notes     String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  vendor  Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, vendorId])
+  @@index([accountId])
+  @@index([vendorId])
+  @@map("bookmarks")
+}
+
+// ---------------------------------------------------------------------------
+// CartItem — synced cart (account-scoped, cross-device). Pattern matches
+// Bookmark: one unique entry per (account, vendorService) with soft upsert.
+// vendorService FK uses CASCADE so deleted services auto-clean from carts.
+// ---------------------------------------------------------------------------
+model CartItem {
+  id              String         @id @default(cuid())
+  accountId       String
+  vendorServiceId String
+  createdAt       DateTime       @default(now())
+
+  account       Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  vendorService VendorService @relation(fields: [vendorServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, vendorServiceId])
+  @@index([accountId])
+  @@map("cart_items")
 }

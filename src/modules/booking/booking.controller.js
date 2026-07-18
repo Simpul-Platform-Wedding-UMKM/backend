@@ -26,6 +26,10 @@ export const createBooking = asyncHandler(async (req, res) => {
     throw new ApiError(422, "One or more services are unavailable");
   }
 
+  console.log(
+    `[booking] account=${req.account.id} project=${project.id} services=${data.vendorServiceIds.length}`,
+  );
+
   const booking = await prisma.booking.create({
     data: {
       weddingProjectId: project.id,
@@ -39,6 +43,10 @@ export const createBooking = asyncHandler(async (req, res) => {
     },
     include: { items: { include: { vendor: true, vendorService: true } } },
   });
+
+  console.log(
+    `[booking] Created booking ${booking.id} with ${booking.items.length} items for project ${project.id}`,
+  );
 
   res.status(201).json(booking);
 });

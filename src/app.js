@@ -26,6 +26,8 @@ import { internalRouter } from "./modules/internal/internal.routes.js";
 import { reviewRouter } from "./modules/review/review.routes.js";
 import { chatRouter } from "./modules/chat/chat.routes.js";
 import { vendorOrdersRouter } from "./modules/vendor-orders/orders.routes.js";
+import { bookmarkRouter } from "./modules/bookmark/bookmark.routes.js";
+import { cartRouter } from "./modules/cart-item/cart-item.routes.js";
 
 export const app = express();
 
@@ -88,6 +90,8 @@ app.use("/disputes", disputeRouter);
 app.use("/reviews", reviewRouter);
 app.use("/chats", chatRouter);
 app.use("/vendor", vendorOrdersRouter);
+app.use("/bookmarks", bookmarkRouter);
+app.use("/cart-items", cartRouter);
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);
