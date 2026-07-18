@@ -37,12 +37,54 @@ app.set("trust proxy", 1);
 
 const allowedOrigins = env.allowedOrigins;
 
+/**
+ * Check if an origin is allowed.
+ * Supports exact matches AND wildcard patterns:
+ *   "http://localhost:3000"  → exact match
+ *   "*.vercel.app"           → matches any vercel.app subdomain
+ *   "*.simpul.my.id"         → matches any simpul.my.id subdomain
+ * When allowedOrigins is empty (no env configured), ALL origins are allowed
+ * (suitable for mobile-only backends where CORS is irrelevant).
+ */
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.length === 0) return true;
+
+  return allowedOrigins.some((pattern) => {
+    // Exact match (backward compatible)
+    if (pattern === origin) return true;
+    // Wildcard: "*.example.com" → matches "sub.example.com", "a.b.example.com"
+    if (pattern.startsWith("*.")) {
+      const suffix = pattern.slice(1); // ".example.com"
+      if (origin.endsWith(suffix)) return true;
+    }
+    return false;
+  });
+}
+
+// Auto-detect Vercel deployment and allow preview URLs
+const vercelUrl = process.env["VERCEL_URL"];
+if (vercelUrl && !allowedOrigins.includes(`https://${vercelUrl}`)) {
+  // Allow this specific Vercel deployment URL (e.g., project.vercel.app)
+  // Also allow all preview deployments (*.vercel.app) if not already listed
+  const hasVercelWildcard = allowedOrigins.some(
+    (p) => p === "*.vercel.app" || p === "https://*.vercel.app",
+  );
+  if (!hasVercelWildcard) {
+    console.log(
+      `[cors] VERCEL_URL detected (${vercelUrl}) — consider adding "*.vercel.app" to ALLOWED_ORIGINS for preview deployments`,
+    );
+  }
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      if (isOriginAllowed(origin)) {
         callback(null, true);
       } else {
+        // Log rejection for debugging — helps identify missing origins
+        console.warn(`[cors] Rejected origin: ${origin}`);
         callback(new Error('Origin ' + origin + ' not allowed by CORS'));
       }
     },
