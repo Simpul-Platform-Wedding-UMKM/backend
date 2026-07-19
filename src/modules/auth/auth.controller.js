@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
@@ -35,6 +36,18 @@ function signToken(account) {
     );
 }
 
+// Lazy-initialized Google OAuth2Client — reuse across requests
+let _googleClient = null;
+function getGoogleClient() {
+    if (!_googleClient) {
+        if (!env.googleClientId) {
+            throw new ApiError(500, "GOOGLE_CLIENT_ID environment variable is not configured");
+        }
+        _googleClient = new OAuth2Client(env.googleClientId);
+    }
+    return _googleClient;
+}
+
 export const registerConsumer = asyncHandler(async (req, res) => {
     const data = registerConsumerSchema.parse(req.body);
 
@@ -63,18 +76,19 @@ export const registerConsumer = asyncHandler(async (req, res) => {
 export const googleLogin = asyncHandler(async (req, res) => {
     const { idToken } = googleLoginSchema.parse(req.body);
 
-    const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    // Verifikasi kriptografis — memvalidasi tanda tangan RSA token dari Google
+    // menggunakan public key resmi Google, jauh lebih aman dari tokeninfo endpoint.
     let payload;
     try {
-        const response = await fetch(tokenInfoUrl);
-        if (!response.ok) {
-            const errBody = await response.json().catch(() => ({}));
-            throw new ApiError(400, errBody.error_description || "Invalid Google ID token");
-        }
-        payload = await response.json();
+        const ticket = await getGoogleClient().verifyIdToken({
+            idToken,
+            audience: env.googleClientId,
+        });
+        payload = ticket.getPayload();
+        if (!payload) throw new Error("Payload kosong dari Google");
     } catch (err) {
         if (err instanceof ApiError) throw err;
-        throw new ApiError(400, "Failed to verify Google ID token with Google API: " + err.message);
+        throw new ApiError(400, "Google ID Token tidak valid: " + err.message);
     }
 
     const { email, name, picture, sub: googleId } = payload;
