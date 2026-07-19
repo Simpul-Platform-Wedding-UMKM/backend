@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { CATEGORIES } from "../../lib/categories.js";
+import { normalizeLocation } from "../../lib/location.js";
 
 // FR-02 Hyper-Local Filter: region, price range, rating, category.
 // (Date-of-availability filtering needs a vendor calendar/blackout-dates
@@ -48,7 +49,7 @@ const updateProfileSchema = z
     .object({
         businessName: z.string().min(1).optional(),
         description: z.string().optional(),
-        region: z.string().optional(),
+        region: z.string().optional().transform(normalizeLocation),
         priceMin: z.number().int().nonnegative().optional(),
         priceMax: z.number().int().nonnegative().optional(),
         bankName: z.string().optional(),
@@ -97,7 +98,7 @@ export const addMyVendorService = asyncHandler(async (req, res) => {
 const applyVendorSchema = z.object({
     businessName: z.string().min(1),
     category: z.enum(CATEGORIES),
-    region: z.string().min(1),
+    region: z.string().min(1).transform(normalizeLocation),
     priceMin: z.number().int().nonnegative(),
     priceMax: z.number().int().nonnegative(),
     description: z.string().optional(),
@@ -175,7 +176,7 @@ export const getKybStatus = asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const seoSchema = z.object({
-    seoKecamatans: z.array(z.string().min(1).max(80)).max(20),
+    seoKecamatans: z.array(z.string().min(1).max(80).transform(normalizeLocation)).max(20),
 });
 export const setPremiumSeo = asyncHandler(async (req, res) => {
     const { seoKecamatans } = seoSchema.parse(req.body);

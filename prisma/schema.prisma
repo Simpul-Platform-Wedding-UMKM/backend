@@ -247,7 +247,7 @@ model BudgetAllocation {
   weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
   category         VendorCategory
   plannedAmount    Int // in IDR
-  actualAmount     Int            @default(0) // updated when a BookingItem in this category is paid
+  actualAmount     Int            @default(0) // unused; kept for future caching. Real "spent" is derived live from PaymentSplit (PAID payments) + BudgetExpense aggregation — see getProjectSummary
 
   @@index([weddingProjectId])
   @@unique([weddingProjectId, category])

@@ -1,113 +1,47 @@
+// TODO: Ganti dengan Midtrans / Xendit real integration sebelum production.
+// Saat ini seluruh payment flow menggunakan mock/simulasi tanpa payment
+// gateway eksternal. Lihat payment.routes.js untuk endpoint manual
+// POST /payments/:id/confirm yang mensimulasikan pembayaran sukses.
+//
+// Yang perlu diganti sebelum production:
+//   1. createQrisForBooking  → panggil Xendit QR Codes API atau Midtrans
+//      charge endpoint untuk generate QRIS asli
+//   2. settlePayment         → panggil Xendit Disbursements API atau
+//      Midtrans payout untuk transfer dana ke vendor
+//   3. Webhook handler       → verifikasi signature dari PJP, update
+//      Payment + BookingItem otomatis (hapus endpoint manual confirmPayment)
+
 import { env } from "../../config/env.js";
 import { prisma } from "../../lib/prisma.js";
 
-// ---------------------------------------------------------------------
-// Why two steps (collect, then disburse) instead of one atomic split:
-//
-// Xendit's QR Codes API (POST /qr_codes) creates a single-destination
-// dynamic QRIS — it does not accept split-rule routing in the same call,
-// as far as the public docs show. Xendit's split-rule feature is
-// documented for card/e-wallet/invoice charges, not QR codes specifically.
-// If you confirm otherwise before the demo, wire split_rule directly into
-// createQrisForBooking() and delete disburseSplits() — that would get you
-// closer to true one-step "Automated Routing" from section 3.3.3.
-//
-// Until then: collect the full amount into the platform's Xendit balance,
-// then immediately fan it out via the Disbursements API once the webhook
-// confirms payment. From the consumer's side it's still one QRIS scan —
-// the two-step part is invisible to them and happens in seconds.
-// ---------------------------------------------------------------------
+const QRIS_TTL_MINUTES = 15;
 
-// ponytail: native fetch instead of axios — one dependency fewer for two REST calls.
-async function xenditPost(path, body) {
-    const res = await fetch(`https://api.xendit.co${path}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "api-version": "2022-07-31",
-            Authorization: `Basic ${Buffer.from(`${env.xenditSecretKey ?? ""}:`).toString("base64")}`,
-        },
-        body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-        const err = new Error(
-            data?.message ?? `Xendit request failed: ${res.status}`,
-        );
-        err.response = { data };
-        throw err;
-    }
-    return data;
-}
-
-async function midtransPost(path, body) {
-    const isProd = env.midtransIsProduction;
-    const baseUrl = isProd ? "https://api.midtrans.com" : "https://api.sandbox.midtrans.com";
-    const res = await fetch(`${baseUrl}${path}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            Authorization: `Basic ${Buffer.from(`${env.midtransServerKey ?? ""}:`).toString("base64")}`,
-        },
-        body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-        const err = new Error(
-            data?.status_message ?? `Midtrans request failed: ${res.status}`,
-        );
-        err.response = { data };
-        throw err;
-    }
-    return data;
-}
-
-const QRIS_TTL_MINUTES = 15; // matches the proposal's stated Dynamic QRIS TTL and Midtrans's own default
-
+// ---------------------------------------------------------------------------
+// Mock: generate dummy QRIS data tanpa panggil PJP eksternal.
+// Return signature sama dengan sebelumnya supaya payment.controller.js
+// tidak perlu diubah sama sekali.
+// ---------------------------------------------------------------------------
 export async function createQrisForBooking(booking, totalAmount) {
     const expiresAt = new Date(Date.now() + QRIS_TTL_MINUTES * 60 * 1000);
 
-    if (env.pjpProvider === "midtrans") {
-        const orderId = `${booking.id}_${Date.now()}`;
-        const data = await midtransPost("/v2/charge", {
-            payment_type: "qris",
-            transaction_details: {
-                order_id: orderId,
-                gross_amount: totalAmount,
-            },
-            qris: {
-                acquirer: "gopay"
-            }
-        });
+    // Dummy QR string — frontend (QrPaymentScreen) merender QR-nya sendiri
+    // via CustomPaint (_MockQrDetailPainter), jadi nilai ini tidak dipakai
+    // untuk rendering. Tetap disimpan untuk keperluan record-keeping.
+    const mockQrString = `MOCK_QRIS_${booking.id}_${Date.now()}`;
 
-        const qrAction = data.actions?.find((a) => a.name === "generate-qr-code");
-        return {
-            pjpTransactionId: data.transaction_id,
-            qrisString: qrAction?.url || null,
-            expiresAt,
-        };
-    } else {
-        const data = await xenditPost("/qr_codes", {
-            reference_id: booking.id,
-            type: "DYNAMIC",
-            currency: "IDR",
-            amount: totalAmount,
-            expires_at: expiresAt.toISOString(),
-            callback_url: `${process.env.PUBLIC_BASE_URL ?? "http://localhost:4000"}/webhooks/xendit`,
-        });
-
-        return {
-            pjpTransactionId: data.id,
-            qrisString: data.qr_string,
-            expiresAt,
-        };
-    }
+    return {
+        pjpTransactionId: `mock_txn_${booking.id}_${Date.now()}`,
+        qrisString: mockQrString,
+        qrisImageUrl: null,               // frontend render sendiri, tidak perlu URL
+        expiresAt,
+    };
 }
 
-// Called from the webhook route once confirmation is received.
-// Computes each vendor's share from the BookingItem prices that were
-// snapshotted at checkout, then fires one Payout per vendor.
+// ---------------------------------------------------------------------------
+// Mock: tandai semua split sebagai SETTLED tanpa panggil disbursement API.
+// Di production, ini akan memanggil Xendit/Midtrans disbursement/payout
+// untuk mentransfer dana ke masing-masing vendor.
+// ---------------------------------------------------------------------------
 export async function settlePayment(paymentId) {
     const payment = await prisma.payment.findUnique({
         where: { id: paymentId },
@@ -122,21 +56,10 @@ export async function settlePayment(paymentId) {
         const vendor = split.bookingItem.vendor;
 
         try {
-            let pjpTransferId;
-            if (env.pjpProvider === "midtrans") {
-                console.log(`[Midtrans Split Payout Simulation] Splitting ${split.vendorAmount} to vendor ${vendor.businessName}`);
-                pjpTransferId = `midtrans_sim_${split.id}`;
-            } else {
-                const data = await xenditPost("/disbursements", {
-                    external_id: `split_${split.id}`,
-                    amount: split.vendorAmount,
-                    bank_code: vendor.bankName,
-                    account_holder_name: vendor.bankAccountName,
-                    account_number: vendor.bankAccountNumber,
-                    description: `SIMPUL payout — booking ${payment.bookingId}`,
-                });
-                pjpTransferId = data.id;
-            }
+            const pjpTransferId = `mock_payout_${split.id}_${Date.now()}`;
+            console.log(
+                `[Mock Settlement] Rp ${split.vendorAmount} → ${vendor.businessName} (${pjpTransferId})`
+            );
 
             await prisma.paymentSplit.update({
                 where: { id: split.id },
@@ -147,10 +70,7 @@ export async function settlePayment(paymentId) {
                 },
             });
         } catch (err) {
-            console.error(
-                `Payout failed for split ${split.id}:`,
-                err.response?.data ?? err.message,
-            );
+            console.error(`Settlement failed for split ${split.id}:`, err);
             await prisma.paymentSplit.update({
                 where: { id: split.id },
                 data: { settlementStatus: "FAILED" },
@@ -159,8 +79,9 @@ export async function settlePayment(paymentId) {
     }
 }
 
-// Splits BookingItem prices into (vendorAmount, platformFeeAmount) using
-// the micro-fee rate from env (default 0.75%, inside the proposal's 0.5–1% range).
+// ---------------------------------------------------------------------------
+// Pure math — tidak perlu mock. Tetap sama seperti sebelumnya.
+// ---------------------------------------------------------------------------
 export function computeSplit(price) {
     const platformFeeAmount = Math.round((price * env.platformFeeBps) / 10000);
     const vendorAmount = price - platformFeeAmount;

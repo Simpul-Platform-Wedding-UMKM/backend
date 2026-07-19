@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { CATEGORIES } from "../../lib/categories.js";
+import { normalizeLocation } from "../../lib/location.js";
 
 // GET /system-users — returns all accounts mapped to the SystemUser shape
 // the admin dashboard expects.
@@ -54,7 +55,7 @@ export const getAuditLogs = asyncHandler(async (req, res) => {
 const adminCreateVendorSchema = z.object({
   businessName: z.string().min(1),
   category: z.enum(CATEGORIES),
-  region: z.string().min(1),
+  region: z.string().min(1).transform(normalizeLocation),
   priceMin: z.number().int().nonnegative(),
   priceMax: z.number().int().nonnegative(),
   description: z.string().optional(),
@@ -91,7 +92,7 @@ export const createVendor = asyncHandler(async (req, res) => {
 const adminUpdateVendorSchema = z.object({
   businessName: z.string().min(1).optional(),
   category: z.enum(CATEGORIES).optional(),
-  region: z.string().optional(),
+  region: z.string().optional().transform(normalizeLocation),
   priceMin: z.number().int().nonnegative().optional(),
   priceMax: z.number().int().nonnegative().optional(),
   description: z.string().optional(),
@@ -105,7 +106,7 @@ const adminUpdateVendorSchema = z.object({
   npwpUrl: z.string().url().optional(),
   siupUrl: z.string().url().optional(),
   mouUrl: z.string().url().optional(),
-  seoKecamatans: z.array(z.string()).optional(),
+  seoKecamatans: z.array(z.string().transform(normalizeLocation)).optional(),
   adSlotActive: z.boolean().optional(),
   adBidAmount: z.number().int().nonnegative().optional(),
 });
