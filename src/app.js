@@ -28,6 +28,7 @@ import { chatRouter } from "./modules/chat/chat.routes.js";
 import { vendorOrdersRouter } from "./modules/vendor-orders/orders.routes.js";
 import { bookmarkRouter } from "./modules/bookmark/bookmark.routes.js";
 import { cartRouter } from "./modules/cart-item/cart-item.routes.js";
+import { locationRouter } from "./modules/location/location.routes.js";
 
 export const app = express();
 
@@ -134,6 +135,7 @@ app.use("/chats", chatRouter);
 app.use("/vendor", vendorOrdersRouter);
 app.use("/bookmarks", bookmarkRouter);
 app.use("/cart-items", cartRouter);
+app.use("/locations", locationRouter); // public — autocomplete suggestions
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);

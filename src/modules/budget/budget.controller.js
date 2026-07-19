@@ -2,13 +2,14 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { CATEGORIES } from "../../lib/categories.js";
+import { normalizeLocation } from "../../lib/location.js";
 
 const createProjectSchema = z.object({
-    eventDate: z.string().datetime().optional(),
+    eventDate: z.string().datetime({ offset: true }).optional(),
     guestCount: z.number().int().positive().optional(),
-    location: z.string().optional(),
+    location: z.string().optional().transform(normalizeLocation),
     themePref: z.string().optional(),
-    totalBudget: z.number().int().positive(),
+    totalBudget: z.number().int().nonnegative().default(0),
 });
 
 export const createWeddingProject = asyncHandler(async (req, res) => {
@@ -126,13 +127,14 @@ export const listExpenses = asyncHandler(async (req, res) => {
 // ── Update Wedding Project ────────────────────────────────────────────────
 
 const updateProjectSchema = z.object({
-    totalBudget: z.number().int().positive().optional(),
-    eventDate: z.string().datetime().optional(),
+    totalBudget: z.number().int().nonnegative().optional(),
+    eventDate: z.string().datetime({ offset: true }).optional(),
     guestCount: z.number().int().positive().optional(),
-    location: z.string().optional(),
+    location: z.string().optional().transform(normalizeLocation),
     themePref: z.string().optional(),
 });
 
+// ── Update Wedding Project
 // PATCH /budget/projects/:projectId
 // Only updates provided fields — can't change accountId
 export const updateWeddingProject = asyncHandler(async (req, res) => {
@@ -151,4 +153,102 @@ export const updateWeddingProject = asyncHandler(async (req, res) => {
         },
     });
     res.json(updated);
+});
+
+// ── Budget Summary (per-category planned vs spent) ─────────────────────────
+// GET /budget/projects/:projectId/summary
+// Single source of truth for the Cart ↔ Budget Planner UI:
+// - plannedAmount from BudgetAllocation
+// - spent → manualExpenses from BudgetExpense (real-time SUM)
+// - spent → bookings from PaymentSplit.vendorAmount+platformFeeAmount
+//   (only PAID payments — exact amount user has actually paid, not approximate %)
+export const getProjectSummary = asyncHandler(async (req, res) => {
+    const project = await prisma.weddingProject.findFirst({
+        where: { id: req.params.projectId, accountId: req.account.id },
+        include: { budgetAllocations: true },
+    });
+    if (!project) throw new ApiError(404, "Wedding project not found");
+
+    const { totalBudget, budgetAllocations } = project;
+
+    // 1) Manual expenses — grouped by category
+    const expenseAgg = await prisma.budgetExpense.groupBy({
+        by: ["category"],
+        where: { weddingProjectId: project.id },
+        _sum: { amount: true },
+    });
+
+    // 2) Booking spend — what the user actually paid (vendorAmount + fees),
+    //    only for settled payments (status = PAID)
+    const paidSplits = await prisma.paymentSplit.findMany({
+        where: {
+            payment: { status: "PAID" },
+            bookingItem: {
+                booking: { weddingProjectId: project.id },
+            },
+        },
+        select: {
+            vendorAmount: true,
+            platformFeeAmount: true,
+            bookingItem: {
+                select: {
+                    vendor: { select: { category: true } },
+                },
+            },
+        },
+    });
+
+    // Build lookup maps
+    const expenseMap = {};
+    for (const e of expenseAgg) {
+        expenseMap[e.category] = e._sum.amount || 0;
+    }
+
+    const bookingMap = {};
+    for (const s of paidSplits) {
+        const cat = s.bookingItem.vendor.category;
+        bookingMap[cat] =
+            (bookingMap[cat] || 0) + s.vendorAmount + s.platformFeeAmount;
+    }
+
+    const allocMap = {};
+    for (const a of budgetAllocations) {
+        allocMap[a.category] = a.plannedAmount;
+    }
+
+    // Merge all known categories
+    const allCategories = [
+        ...new Set([
+            ...Object.keys(allocMap),
+            ...Object.keys(expenseMap),
+            ...Object.keys(bookingMap),
+        ]),
+    ];
+
+    const categories = allCategories.map((cat) => {
+        const planned = allocMap[cat] || 0;
+        const manualExpenses = expenseMap[cat] || 0;
+        const bookings = bookingMap[cat] || 0;
+        const total = manualExpenses + bookings;
+        return {
+            category: cat,
+            plannedAmount: planned,
+            spent: { manualExpenses, bookings, total },
+            remaining: planned - total,
+        };
+    });
+
+    const totalAllocated = Object.values(allocMap).reduce((a, b) => a + b, 0);
+    const totalSpent = categories.reduce((s, c) => s + c.spent.total, 0);
+
+    res.json({
+        totalBudget,
+        categories,
+        totals: {
+            allocated: totalAllocated,
+            spent: totalSpent,
+            unallocated: totalBudget - totalAllocated,
+            remaining: totalBudget - totalSpent,
+        },
+    });
 });
