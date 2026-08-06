@@ -12,6 +12,10 @@ export const env = {
     jwtSecret: process.env.JWT_SECRET,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
 
+    // Google Sign-In — Web Client ID dari GCP Console
+    // Digunakan untuk memverifikasi idToken dari mobile app secara kriptografis.
+    googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
+
     pjpProvider: process.env.PJP_PROVIDER ?? "xendit",
     xenditSecretKey: process.env.XENDIT_SECRET_KEY,
     xenditCallbackToken: process.env.XENDIT_CALLBACK_TOKEN,

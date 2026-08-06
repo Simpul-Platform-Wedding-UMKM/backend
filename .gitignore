@@ -39,3 +39,4 @@ seed.js
 #agent
 .agents
 .commandcode
+.github/agents
