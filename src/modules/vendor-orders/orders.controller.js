@@ -93,6 +93,21 @@ export const rejectOrder = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /vendor/orders/:bookingItemId/complete — ON_PROGRESS → COMPLETED
+// ---------------------------------------------------------------------------
+export const completeOrder = asyncHandler(async (req, res) => {
+    const item = await loadItemForVendor(req.params.bookingItemId, req.vendor.id);
+    if (item.status !== "ON_PROGRESS") {
+        throw new ApiError(422, `Cannot complete an order in status ${item.status}`);
+    }
+    const updated = await prisma.bookingItem.update({
+        where: { id: item.id },
+        data: { status: "COMPLETED" },
+    });
+    res.json(updated);
+});
+
+// ---------------------------------------------------------------------------
 // PUT /vendor/orders/:bookingItemId/milestones — replace milestone checklist
 // ---------------------------------------------------------------------------
 const milestoneSchema = z.object({

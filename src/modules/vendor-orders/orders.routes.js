@@ -5,6 +5,7 @@ import {
     acceptOrder,
     rejectOrder,
     updateMilestones,
+    completeOrder,
 } from "./orders.controller.js";
 
 export const vendorOrdersRouter = Router();
@@ -13,4 +14,5 @@ vendorOrdersRouter.use(requireAuth, requireVendor);
 vendorOrdersRouter.get("/orders", listMyOrders);
 vendorOrdersRouter.post("/orders/:bookingItemId/accept", acceptOrder);
 vendorOrdersRouter.post("/orders/:bookingItemId/reject", rejectOrder);
+vendorOrdersRouter.post("/orders/:bookingItemId/complete", completeOrder);
 vendorOrdersRouter.put("/orders/:bookingItemId/milestones", updateMilestones);

@@ -50,6 +50,7 @@ model Account {
   passwordResetTokens  PasswordResetToken[]
   bookmarks            Bookmark[]
   cartItems            CartItem[]
+  supportTickets       SupportTicket[]
 
   @@map("accounts")
 }
@@ -111,6 +112,9 @@ model Vendor {
   whatsapp       String?
   instagram      String?
   website        String?
+
+  // Portfolio photo URLs (vendor-managed gallery)
+  portfolio String[] @default([])
 
   // Premium (gap F) — SEO target kecamatans + AI ad-slot bid
   seoKecamatans String[] @default([])
@@ -233,6 +237,8 @@ model WeddingProject {
   expenses            BudgetExpense[]
   bookings            Booking[]
   aiRecommendationLog AiRecommendationLog[]
+  guests              Guest[]
+  moodboardItems      MoodboardItem[]
 
   @@index([accountId])
   @@map("wedding_projects")
@@ -556,4 +562,56 @@ model CartItem {
   @@unique([accountId, vendorServiceId])
   @@index([accountId])
   @@map("cart_items")
+}
+
+// ---------------------------------------------------------------------------
+// Consumer planning features — guest list & moodboard, scoped to a WeddingProject
+// ---------------------------------------------------------------------------
+
+enum RsvpStatus {
+  HADIR
+  TIDAK_HADIR
+  MENUNGGU
+}
+
+model Guest {
+  id               String         @id @default(cuid())
+  weddingProjectId String
+  weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
+  name             String
+  phone            String?
+  rsvpStatus       RsvpStatus     @default(MENUNGGU)
+  createdAt        DateTime       @default(now())
+
+  @@index([weddingProjectId])
+  @@map("guests")
+}
+
+model MoodboardItem {
+  id               String         @id @default(cuid())
+  weddingProjectId String
+  weddingProject   WeddingProject @relation(fields: [weddingProjectId], references: [id], onDelete: Cascade)
+  title            String
+  category         String // Dekorasi | MUA | Venue | Busana
+  imageUrl         String
+  createdAt        DateTime       @default(now())
+
+  @@index([weddingProjectId])
+  @@map("moodboard_items")
+}
+
+// ---------------------------------------------------------------------------
+// Support tickets — consumer → SIMPUL support team
+// ---------------------------------------------------------------------------
+model SupportTicket {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subject   String
+  message   String
+  status    String   @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@map("support_tickets")
 }

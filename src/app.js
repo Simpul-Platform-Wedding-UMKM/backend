@@ -29,6 +29,10 @@ import { vendorOrdersRouter } from "./modules/vendor-orders/orders.routes.js";
 import { bookmarkRouter } from "./modules/bookmark/bookmark.routes.js";
 import { cartRouter } from "./modules/cart-item/cart-item.routes.js";
 import { locationRouter } from "./modules/location/location.routes.js";
+import { guestRouter } from "./modules/guest/guest.routes.js";
+import { moodboardRouter } from "./modules/moodboard/moodboard.routes.js";
+import { notificationRouter } from "./modules/notifications/notifications.routes.js";
+import { supportRouter } from "./modules/support/support.routes.js";
 
 export const app = express();
 
@@ -136,6 +140,10 @@ app.use("/vendor", vendorOrdersRouter);
 app.use("/bookmarks", bookmarkRouter);
 app.use("/cart-items", cartRouter);
 app.use("/locations", locationRouter); // public — autocomplete suggestions
+app.use("/guests", guestRouter);
+app.use("/moodboard", moodboardRouter);
+app.use("/notifications", notificationRouter);
+app.use("/support", supportRouter);
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);

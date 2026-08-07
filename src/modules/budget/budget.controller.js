@@ -6,10 +6,10 @@ import { normalizeLocation } from "../../lib/location.js";
 
 const createProjectSchema = z.object({
     eventDate: z.string().datetime({ offset: true }).optional(),
-    guestCount: z.number().int().positive().optional(),
+    guestCount: z.coerce.number().int().positive().optional(),
     location: z.string().optional().transform(normalizeLocation),
     themePref: z.string().optional(),
-    totalBudget: z.number().int().nonnegative().default(0),
+    totalBudget: z.coerce.number().int().nonnegative().default(0),
 });
 
 export const createWeddingProject = asyncHandler(async (req, res) => {
@@ -127,9 +127,9 @@ export const listExpenses = asyncHandler(async (req, res) => {
 // ── Update Wedding Project ────────────────────────────────────────────────
 
 const updateProjectSchema = z.object({
-    totalBudget: z.number().int().nonnegative().optional(),
+    totalBudget: z.coerce.number().int().nonnegative().optional(),
     eventDate: z.string().datetime({ offset: true }).optional(),
-    guestCount: z.number().int().positive().optional(),
+    guestCount: z.coerce.number().int().positive().optional(),
     location: z.string().optional().transform(normalizeLocation),
     themePref: z.string().optional(),
 });
