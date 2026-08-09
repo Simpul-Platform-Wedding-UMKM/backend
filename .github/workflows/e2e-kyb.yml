@@ -1,0 +1,62 @@
+name: E2E KYB (staging)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, develop]
+
+jobs:
+  e2e-kyb:
+    name: E2E KYB against staging DB
+    runs-on: ubuntu-latest
+    # Hanya jalankan dari branch dalam repo sendiri (bukan fork) — fork tidak
+    # punya akses ke secrets staging.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    env:
+      # Semua kredensial staging — TIDAK PERNAH berisi production.
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_BUCKET: ${{ secrets.STAGING_SUPABASE_BUCKET }}
+      JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
+      # Guard: produksi blocklist + allowlist staging (lihat src/tests/safety.js)
+      ALLOW_DB_RESET: "true"
+      E2E_STAGING_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      PRODUCTION_DATABASE_HOST: ${{ secrets.PRODUCTION_DATABASE_HOST }}
+      PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate --config prisma.config.ts
+
+      - name: Apply migrations (staging only)
+        working-directory: backend
+        run: npx prisma migrate deploy --config prisma.config.ts
+
+      - name: Run E2E KYB loop
+        working-directory: backend
+        run: npx vitest run src/tests/kyb_e2e.test.js
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-kyb-log
+          path: backend/vitest-report.txt
+          retention-days: 7

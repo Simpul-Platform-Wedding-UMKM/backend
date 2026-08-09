@@ -16,6 +16,11 @@ export const env = {
     // Digunakan untuk memverifikasi idToken dari mobile app secara kriptografis.
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
 
+    // Supabase Storage — profile photo uploads
+    supabaseUrl: process.env.SUPABASE_URL ?? "",
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+    supabaseBucket: process.env.SUPABASE_BUCKET ?? "avatars",
+
     pjpProvider: process.env.PJP_PROVIDER ?? "xendit",
     xenditSecretKey: process.env.XENDIT_SECRET_KEY,
     xenditCallbackToken: process.env.XENDIT_CALLBACK_TOKEN,

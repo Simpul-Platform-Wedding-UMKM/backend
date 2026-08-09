@@ -2,7 +2,6 @@
 .env
 .env.local
 .env.*.local
-
 # 2. DEPENDENCIES (Jangan upload folder node_modules ke GitHub)
 node_modules/
 .pnp

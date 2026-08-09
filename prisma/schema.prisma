@@ -348,7 +348,8 @@ model Payment {
   bookingId String  @unique
   booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
-  totalAmount Int // sum of all BookingItem.price, in IDR
+  totalAmount Int // sum of all BookingItem.price, in IDR — utk DP = 30%, utk pelunasan = sisa
+  paidAmount  Int @default(0) // total yang sudah dibayar (akumulasi installment)
   platformFee Int // sum of PaymentSplit.platformFeeAmount, in IDR — SIMPUL's only revenue from this transaction
 
   // Partial-payment tracking (ponytail advice B): a single Booking can be

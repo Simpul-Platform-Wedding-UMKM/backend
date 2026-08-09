@@ -75,6 +75,49 @@ export const getPayment = asyncHandler(async (req, res) => {
   res.json(payment);
 });
 
+// Pelunasan sisa setelah DP (installment 2). Payment row sama (bookingId
+// unique) — kita update: totalAmount → sisa yang harus dibayar, paymentType
+// → FULL_100, installmentNumber → 2, status → PENDING, QRIS baru untuk sisa.
+// Saat confirmPayment, item jadi COMPLETED & paidAmount diakumulasi.
+export const createRemainderPayment = asyncHandler(async (req, res) => {
+  const booking = await prisma.booking.findUnique({
+    where: { id: req.params.bookingId },
+    include: { items: true, payment: true },
+  });
+  if (!booking) throw new ApiError(404, "Booking not found");
+  const payment = booking.payment;
+  if (!payment) throw new ApiError(409, "Belum ada pembayaran — buat DP/lunas dulu");
+  if (payment.paymentType !== "DP_30") {
+    throw new ApiError(409, "Bukan pembayaran DP — tidak ada sisa tagihan");
+  }
+  if (payment.status !== "PAID") {
+    throw new ApiError(409, "DP belum dibayar — selesaikan DP dulu");
+  }
+
+  const fullAmount = booking.items.reduce((sum, i) => sum + i.price, 0);
+  const remaining = fullAmount - payment.paidAmount;
+  if (remaining <= 0) {
+    throw new ApiError(409, "Tagihan sudah lunas");
+  }
+
+  const gateway = await createQrisForBooking(booking, remaining);
+
+  const updated = await prisma.payment.update({
+    where: { id: payment.id },
+    data: {
+      totalAmount: remaining,
+      paymentType: "FULL_100",
+      installmentNumber: 2,
+      status: "PENDING",
+      pjpTransactionId: gateway.pjpTransactionId,
+      qrisString: gateway.qrisString,
+      qrisImageUrl: gateway.qrisImageUrl || gateway.qrisString || null,
+      expiresAt: gateway.expiresAt,
+    },
+  });
+  res.json(updated);
+});
+
 // Xendit calls this. Verify the shared token before trusting anything in
 // the body — this endpoint has no auth middleware since it's called by
 // Xendit, not by a logged-in user, so the token IS the auth.
@@ -121,7 +164,11 @@ export const confirmPayment = asyncHandler(async (req, res) => {
 
   const updatedPayment = await prisma.payment.update({
     where: { id: payment.id },
-    data: { status: "PAID", paidAt: new Date() },
+    data: {
+      status: "PAID",
+      paidAt: new Date(),
+      paidAmount: payment.paidAmount + payment.totalAmount,
+    },
   });
 
   // Update BookingItem statuses based on payment type:

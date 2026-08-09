@@ -1,0 +1,6 @@
+{
+  "comment": "Non-secret config untuk safety guard E2E. ISI HANYA substring host/ref (bukan password). File ini aman di-commit.",
+  "productionDatabaseHost": "",
+  "productionSupabaseUrl": "",
+  "stagingProjectRef": ""
+}

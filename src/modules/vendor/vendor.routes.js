@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { requireAuth, requireVendor } from "../../middleware/auth.js";
 import {
   searchVendors,
@@ -39,8 +40,17 @@ vendorRouter.get("/me/catalog", requireAuth, requireVendor, getVendorCatalog);
 vendorRouter.post("/me/portfolio", requireAuth, requireVendor, addVendorPortfolio);
 vendorRouter.get("/me/premium", requireAuth, requireVendor, getVendorPremium);
 
-// Gap C: KYB
-vendorRouter.post("/me/verify", requireAuth, requireVendor, submitKyb);
+// Gap C: KYB — multipart upload dokumen (KTP & NPWP wajib, SIUP/MOU opsional)
+const kybUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per dokumen
+});
+vendorRouter.post("/me/verify", requireAuth, requireVendor, kybUpload.fields([
+    { name: "ktp", maxCount: 1 },
+    { name: "npwp", maxCount: 1 },
+    { name: "siup", maxCount: 1 },
+    { name: "mou", maxCount: 1 },
+]), submitKyb);
 vendorRouter.get("/me/verification", requireAuth, requireVendor, getKybStatus);
 
 // Gap F: Premium

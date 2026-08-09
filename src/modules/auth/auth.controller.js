@@ -5,8 +5,9 @@ import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
-import { env } from "../../config/env.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
+import { env } from "../../config/env.js";
+import { uploadFile } from "../../lib/storage.js";
 
 const BCRYPT_ROUNDS = process.env.NODE_ENV === "test" ? 4 : 10;
 
@@ -320,6 +321,40 @@ export const updateMyAccount = asyncHandler(async (req, res) => {
     const account = await prisma.account.update({
         where: { id: req.account.id },
         data,
+        include: { vendor: true },
+    });
+    res.json({ account: sanitize(account) });
+});
+
+// ── Profile Photo Upload ──────────────────────────────────────────────────
+// Multipart (multer) → Supabase Storage → simpan public URL di Account.
+
+const AVATAR_MIME = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+};
+
+export const uploadProfilePhoto = asyncHandler(async (req, res) => {
+    if (!req.file) throw new ApiError(400, "File foto tidak ditemukan");
+    const ext = AVATAR_MIME[req.file.mimetype];
+    if (!ext) {
+        throw new ApiError(400, "Format foto harus JPG, PNG, atau WebP");
+    }
+    if (req.file.size > 100 * 1024) {
+        throw new ApiError(400, "Foto maksimal 100KB");
+    }
+
+    const url = await uploadFile(
+        req.file.buffer,
+        req.file.mimetype,
+        ext,
+        req.account.id,
+    );
+
+    const account = await prisma.account.update({
+        where: { id: req.account.id },
+        data: { profileImageUrl: url },
         include: { vendor: true },
     });
     res.json({ account: sanitize(account) });

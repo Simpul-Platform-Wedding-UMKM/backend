@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { CATEGORIES } from "../../lib/categories.js";
 import { normalizeLocation } from "../../lib/location.js";
+import { uploadFile } from "../../lib/storage.js";
 
 // FR-02 Hyper-Local Filter: region, price range, rating, category.
 // (Date-of-availability filtering needs a vendor calendar/blackout-dates
@@ -135,20 +136,45 @@ export const applyVendor = asyncHandler(async (req, res) => {
 // Gap C: KYB document submission
 // ---------------------------------------------------------------------------
 
-const verifySchema = z.object({
-    ktpUrl: z.string().url(),
-    npwpUrl: z.string().url(),
-    siupUrl: z.string().url().optional(),
-    mouUrl: z.string().url().optional(),
-});
+// Multipart: ktp/npwp/siup/mou files uploaded via multer (memory storage).
+// MIME & size dicek di handler; file diupload ke Supabase Storage, URL disimpan.
+const KYB_MIME = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "application/pdf": "pdf",
+};
 
-// POST /vendors/me/verify — submit KYB documents
+async function uploadKybFile(file, vendorId, field) {
+    const ext = KYB_MIME[file.mimetype];
+    if (!ext) {
+        throw new ApiError(400, `Format ${field} harus JPG, PNG, WebP, atau PDF`);
+    }
+    return uploadFile(file.buffer, file.mimetype, ext, vendorId, "kyb");
+}
+
+// POST /vendors/me/verify — submit KYB documents (multipart/form-data)
 export const submitKyb = asyncHandler(async (req, res) => {
-    const data = verifySchema.parse(req.body);
+    const files = req.files ?? {};
+    // Setidaknya KTP + NPWP wajib; SIUP/MOU opsional
+    if (!files.ktp || !files.npwp) {
+        throw new ApiError(400, "KTP dan NPWP wajib diunggah");
+    }
+
+    const [ktpUrl, npwpUrl, siupUrl, mouUrl] = await Promise.all([
+        uploadKybFile(files.ktp[0], req.vendor.id, "KTP"),
+        uploadKybFile(files.npwp[0], req.vendor.id, "NPWP"),
+        files.siup ? uploadKybFile(files.siup[0], req.vendor.id, "SIUP") : Promise.resolve(undefined),
+        files.mou ? uploadKybFile(files.mou[0], req.vendor.id, "MOU") : Promise.resolve(undefined),
+    ]);
+
     const vendor = await prisma.vendor.update({
         where: { id: req.vendor.id },
         data: {
-            ...data,
+            ...(ktpUrl && { ktpUrl }),
+            ...(npwpUrl && { npwpUrl }),
+            ...(siupUrl && { siupUrl }),
+            ...(mouUrl && { mouUrl }),
             kybStatus: "PENDING",
             kybVerified: false, // clear stale verified flag if re-submitting
             rejectedReason: null,

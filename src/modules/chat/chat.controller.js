@@ -182,10 +182,14 @@ export const sendMessage = asyncHandler(async (req, res) => {
     }
 
     const senderType = callerType(req);
+    // VENDOR: senderId = vendor.id (bukan account.id) — konsisten dengan
+    // bagaimana client membedakan pengirim & seed data.
+    const senderId =
+        senderType === "VENDOR" ? req.vendor.id : req.account.id;
     const message = await prisma.message.create({
         data: {
             chatRoomId: room.id,
-            senderId: req.account.id,
+            senderId,
             senderType,
             content: data.content,
         },
