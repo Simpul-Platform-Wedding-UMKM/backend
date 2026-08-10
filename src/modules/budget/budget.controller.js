@@ -128,7 +128,9 @@ export const listExpenses = asyncHandler(async (req, res) => {
 
 const updateProjectSchema = z.object({
     totalBudget: z.coerce.number().int().nonnegative().optional(),
-    eventDate: z.string().datetime({ offset: true }).optional(),
+    // nullable: mobile bisa kirim null untuk "hapus tanggal" — `.optional()`
+    // saja menolak null (400), padahal schema DB eventDate nullable.
+    eventDate: z.string().datetime({ offset: true }).nullable().optional(),
     guestCount: z.coerce.number().int().positive().optional(),
     location: z.string().optional().transform(normalizeLocation),
     themePref: z.string().optional(),
@@ -149,7 +151,13 @@ export const updateWeddingProject = asyncHandler(async (req, res) => {
         where: { id: req.params.projectId },
         data: {
             ...data,
-            eventDate: data.eventDate ? new Date(data.eventDate) : undefined,
+            // null → hapus tanggal; string → parse; undefined → tidak diubah
+            eventDate:
+                data.eventDate === null
+                    ? null
+                    : data.eventDate
+                      ? new Date(data.eventDate)
+                      : undefined,
         },
     });
     res.json(updated);
