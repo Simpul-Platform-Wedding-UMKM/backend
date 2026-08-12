@@ -101,7 +101,8 @@ const adminUpdateVendorSchema = z.object({
   bankAccountName: z.string().optional(),
   kybVerified: z.boolean().optional(),
   kybStatus: z.enum(["UNSUBMITTED", "PENDING", "VERIFIED", "REJECTED"]).optional(),
-  rejectedReason: z.string().optional(),
+  // nullable: approve mengirim null untuk membersihkan rejectedReason lama.
+  rejectedReason: z.string().nullable().optional(),
   ktpUrl: z.string().url().optional(),
   npwpUrl: z.string().url().optional(),
   siupUrl: z.string().url().optional(),

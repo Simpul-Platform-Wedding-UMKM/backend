@@ -14,13 +14,52 @@ const createProjectSchema = z.object({
 
 export const createWeddingProject = asyncHandler(async (req, res) => {
     const data = createProjectSchema.parse(req.body);
-    const project = await prisma.weddingProject.create({
-        data: {
-            ...data,
-            eventDate: data.eventDate ? new Date(data.eventDate) : undefined,
-            accountId: req.account.id,
-        },
+
+    // Pembagian otomatis anggaran per kategori (MVP): persentase default
+    // industri pernikahan. Total persentase = 100%.
+    const DEFAULT_SPLIT = [
+        { category: "VENUE", pct: 0.2 },
+        { category: "CATERING", pct: 0.25 },
+        { category: "DECORATION", pct: 0.15 },
+        { category: "PHOTOGRAPHY", pct: 0.1 },
+        { category: "MUA", pct: 0.1 },
+        { category: "ATTIRE", pct: 0.08 },
+        { category: "WEDDING_ORGANIZER", pct: 0.07 },
+        { category: "OTHER", pct: 0.05 },
+    ];
+
+    const project = await prisma.$transaction(async (tx) => {
+        const created = await tx.weddingProject.create({
+            data: {
+                ...data,
+                eventDate: data.eventDate ? new Date(data.eventDate) : undefined,
+                accountId: req.account.id,
+            },
+        });
+
+        // Buat alokasi default kalau budget > 0 (pembulatan, sisa ke OTHER).
+        if (data.totalBudget > 0) {
+            const budget = data.totalBudget;
+            let allocated = 0;
+            for (let i = 0; i < DEFAULT_SPLIT.length; i++) {
+                const isLast = i === DEFAULT_SPLIT.length - 1;
+                const planned = isLast
+                    ? budget - allocated
+                    : Math.round(budget * DEFAULT_SPLIT[i].pct);
+                allocated += planned;
+                await tx.budgetAllocation.create({
+                    data: {
+                        weddingProjectId: created.id,
+                        category: DEFAULT_SPLIT[i].category,
+                        plannedAmount: planned,
+                    },
+                });
+            }
+        }
+
+        return created;
     });
+
     res.status(201).json(project);
 });
 

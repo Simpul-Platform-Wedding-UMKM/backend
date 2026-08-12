@@ -8,8 +8,31 @@ import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { env } from "../../config/env.js";
 import { uploadFile } from "../../lib/storage.js";
+import { CATEGORIES } from "../../lib/categories.js";
+import { normalizeLocation } from "../../lib/location.js";
 
 const BCRYPT_ROUNDS = process.env.NODE_ENV === "test" ? 4 : 10;
+
+const registerVendorSchema = z
+    .object({
+        email: z.string().email(),
+        password: z.string().min(8),
+        fullName: z.string().min(1),
+        phone: z.string().optional(),
+        businessName: z.string().min(1),
+        category: z.enum(CATEGORIES),
+        region: z.string().min(1).transform(normalizeLocation),
+        priceMin: z.number().int().nonnegative(),
+        priceMax: z.number().int().nonnegative(),
+        description: z.string().optional(),
+        bankName: z.string().optional(),
+        bankAccountNumber: z.string().optional(),
+        bankAccountName: z.string().optional(),
+    })
+    .refine((d) => d.priceMin <= d.priceMax, {
+        message: "priceMin must be <= priceMax",
+        path: ["priceMax"],
+    });
 
 const registerConsumerSchema = z.object({
     email: z.string().email(),
@@ -66,6 +89,54 @@ export const registerConsumer = asyncHandler(async (req, res) => {
             phone: data.phone,
             role: Role.CONSUMER,
         },
+    });
+
+    res.status(201).json({
+        token: signToken(account),
+        account: sanitize(account),
+    });
+});
+
+// Registrasi langsung sebagai vendor: buat akun (role VENDOR) + profil
+// vendor dalam satu transaksi. KYB dimulai dari UNSUBMITTED — vendor wajib
+// submit dokumen sebelum bisa menerima pesanan.
+export const registerVendor = asyncHandler(async (req, res) => {
+    const data = registerVendorSchema.parse(req.body);
+
+    const existing = await prisma.account.findUnique({
+        where: { email: data.email },
+    });
+    if (existing) throw new ApiError(409, "Email already registered");
+
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+
+    const account = await prisma.$transaction(async (tx) => {
+        const acc = await tx.account.create({
+            data: {
+                email: data.email,
+                passwordHash,
+                fullName: data.fullName,
+                phone: data.phone,
+                role: Role.VENDOR,
+                vendor: {
+                    create: {
+                        businessName: data.businessName,
+                        category: data.category,
+                        region: data.region,
+                        priceMin: data.priceMin,
+                        priceMax: data.priceMax,
+                        description: data.description,
+                        bankName: data.bankName,
+                        bankAccountNumber: data.bankAccountNumber,
+                        bankAccountName: data.bankAccountName,
+                        kybVerified: false,
+                        kybStatus: "UNSUBMITTED",
+                    },
+                },
+            },
+            include: { vendor: true },
+        });
+        return acc;
     });
 
     res.status(201).json({

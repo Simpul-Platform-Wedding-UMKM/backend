@@ -24,6 +24,7 @@ datasource db {
 
 enum Role {
   CONSUMER
+  VENDOR
   ADMIN
 }
 
@@ -363,6 +364,8 @@ model Payment {
   pjpTransactionId String?   @unique
   qrisString       String? // raw QR payload, if you want to render it yourself instead of hotlinking
   qrisImageUrl     String?
+  snapToken        String? // Midtrans Snap token, for client-side Snap UI
+  paymentUrl       String? // Midtrans redirect_url — WebView/redirect target for payment
   expiresAt        DateTime? // Dynamic QRIS TTL — Midtrans defaults to 15 min, matches the proposal's risk table
 
   status    PaymentStatus @default(PENDING)

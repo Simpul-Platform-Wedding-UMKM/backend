@@ -15,6 +15,8 @@ const searchSchema = z.object({
     minPrice: z.coerce.number().int().optional(),
     maxPrice: z.coerce.number().int().optional(),
     minRating: z.coerce.number().optional(),
+    // Filter tier: "premium" (subscription PREMIUM) | "basic" (FREE)
+    tier: z.enum(["premium", "basic"]).optional(),
 });
 
 export const searchVendors = asyncHandler(async (req, res) => {
@@ -29,6 +31,8 @@ export const searchVendors = asyncHandler(async (req, res) => {
             ...(q.minPrice && { priceMax: { gte: q.minPrice } }),
             ...(q.maxPrice && { priceMin: { lte: q.maxPrice } }),
             ...(q.minRating && { ratingAvg: { gte: q.minRating } }),
+            ...(q.tier === "premium" && { subscriptionTier: "PREMIUM" }),
+            ...(q.tier === "basic" && { subscriptionTier: "FREE" }),
         },
         include: { services: { where: { isActive: true } } },
         orderBy: { ratingAvg: "desc" },
@@ -121,12 +125,19 @@ export const applyVendor = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Account is already registered as a vendor");
     }
 
-    const vendor = await prisma.vendor.create({
-        data: {
-            ...data,
-            accountId: req.account.id,
-            kybVerified: false,
-        },
+    const vendor = await prisma.$transaction(async (tx) => {
+        // Upgrade role akun jadi VENDOR (konsisten dengan register vendor).
+        await tx.account.update({
+            where: { id: req.account.id },
+            data: { role: "VENDOR" },
+        });
+        return tx.vendor.create({
+            data: {
+                ...data,
+                accountId: req.account.id,
+                kybVerified: false,
+            },
+        });
     });
 
     res.status(201).json(vendor);
@@ -348,7 +359,7 @@ export const getVendorEarnings = asyncHandler(async (req, res) => {
 
 // GET /vendors/me/notifications — latest orders + settlements for this vendor
 export const getVendorNotifications = asyncHandler(async (req, res) => {
-    const [items, splits] = await Promise.all([
+    const [items, splits, vendor] = await Promise.all([
         prisma.bookingItem.findMany({
             where: { vendorId: req.vendor.id },
             orderBy: { createdAt: "desc" },
@@ -367,9 +378,34 @@ export const getVendorNotifications = asyncHandler(async (req, res) => {
             orderBy: { settledAt: "desc" },
             take: 5,
         }),
+        prisma.vendor.findUnique({ where: { id: req.vendor.id } }),
     ]);
 
     const notifications = [
+        // Notifikasi status KYB (approve/reject) — vendor perlu tahu hasil
+        // verifikasi, terutama kalau ditolak (beserta alasan).
+        ...(vendor && vendor.kybStatus !== "UNSUBMITTED"
+            ? [
+                  {
+                      id: `kyb-${vendor.id}`,
+                      type: "KYB",
+                      title:
+                          vendor.kybStatus === "VERIFIED"
+                              ? "Verifikasi Disetujui 🎉"
+                              : vendor.kybStatus === "REJECTED"
+                                ? "Verifikasi Ditolak"
+                                : "Verifikasi Sedang Ditinjau",
+                      description:
+                          vendor.kybStatus === "VERIFIED"
+                              ? "Selamat! Akun vendor Anda telah terverifikasi. Anda sudah bisa menerima pesanan."
+                              : vendor.kybStatus === "REJECTED"
+                                ? `Pengajuan verifikasi ditolak: ${vendor.rejectedReason ?? "dokumen tidak memenuhi syarat"}. Silakan perbaiki dan ajukan ulang.`
+                                : "Dokumen verifikasi Anda sedang ditinjau tim SIMPUL.",
+                      createdAt: vendor.updatedAt.toISOString(),
+                      isRead: false,
+                  },
+              ]
+            : []),
         ...items.map((i) => ({
             id: `order-${i.id}`,
             type: "ORDER",

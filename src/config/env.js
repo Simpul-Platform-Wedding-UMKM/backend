@@ -24,8 +24,11 @@ export const env = {
     pjpProvider: process.env.PJP_PROVIDER ?? "xendit",
     xenditSecretKey: process.env.XENDIT_SECRET_KEY,
     xenditCallbackToken: process.env.XENDIT_CALLBACK_TOKEN,
+    midtransMerchantId: process.env.MIDTRANS_MERCHANT_ID,
     midtransServerKey: process.env.MIDTRANS_SERVER_KEY,
     midtransIsProduction: process.env.MIDTRANS_IS_PRODUCTION === "true",
+    midtransSnapBaseUrl:
+        process.env.MIDTRANS_SNAP_BASE_URL ?? "https://app.sandbox.midtrans.com",
 
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",

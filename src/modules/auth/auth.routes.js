@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { requireAuth } from "../../middleware/auth.js";
-import { registerConsumer, login, googleLogin, getMe, updateMyAccount, uploadProfilePhoto, changePassword, getSessions, revokeSession, forgotPassword, resetPassword } from "./auth.controller.js";
+import { registerConsumer, registerVendor, login, googleLogin, getMe, updateMyAccount, uploadProfilePhoto, changePassword, getSessions, revokeSession, forgotPassword, resetPassword } from "./auth.controller.js";
 
 // Multer memory storage — file dicek & diupload ke Supabase Storage.
 // Max 100KB per foto profile (klien sudah kompres sebelum upload).
@@ -13,6 +13,7 @@ const upload = multer({
 export const authRouter = Router();
 
 authRouter.post("/register/consumer", registerConsumer);
+authRouter.post("/register/vendor", registerVendor);
 authRouter.post("/login", login);
 authRouter.post("/google", googleLogin);
 authRouter.post("/forgot-password", forgotPassword);

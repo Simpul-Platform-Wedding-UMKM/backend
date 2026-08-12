@@ -35,6 +35,9 @@ function mapSplit(s) {
     bookingId: payment.id,
     bookingItemId: s.bookingItemId,
     vendorId: s.vendorId,
+    // Nama untuk tampilan admin (bukan ID mentah)
+    serviceName: item.vendorService?.name || null,
+    vendorName: item.vendor?.businessName || null,
     grossAmount: item.price,
     microFeeAmount: 0,
     platformFeeAmount: s.platformFeeAmount,
