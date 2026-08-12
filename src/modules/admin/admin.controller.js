@@ -206,12 +206,23 @@ export const getVendorVerificationById = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Heatmap (gap 5)
+// Heatmap — QRIS transaction density by kecamatan (Kabupaten Banyumas)
+// Data dari tabel payment_geo (di-seed). Fallback ke [] jika belum ada.
 // ---------------------------------------------------------------------------
 
-// GET /heatmap — QRIS transaction density by kecamatan.
-// ponytail: no geo-coordinate model exists yet, returns empty array.
-// Add a PaymentGeo or kecamatan-ref model when real heatmap data is needed.
+// GET /heatmap — reads PaymentGeo rows seeded into the database.
 export const getHeatmapData = asyncHandler(async (req, res) => {
-  res.json([]);
+  const rows = await prisma.paymentGeo.findMany({
+    orderBy: { count: "desc" },
+  });
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      kecamatan: r.kecamatan,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      amount: r.amount,
+      count: r.count,
+    })),
+  );
 });

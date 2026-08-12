@@ -616,3 +616,17 @@ model SupportTicket {
   @@index([accountId])
   @@map("support_tickets")
 }
+
+// ---------------------------------------------------------------------------
+// PaymentGeo — QRIS transaction density per kecamatan (untuk heatmap admin)
+// ---------------------------------------------------------------------------
+model PaymentGeo {
+  id        String   @id @default(cuid())
+  kecamatan String   @unique
+  latitude  Float
+  longitude Float
+  amount    Int // total volume transaksi (IDR)
+  count     Int // jumlah transaksi
+
+  @@map("payment_geo")
+}
