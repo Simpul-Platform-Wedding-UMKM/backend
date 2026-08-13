@@ -24,9 +24,16 @@ export async function createSnapForBooking(booking, totalAmount) {
     // pernah dipakai (retry setelah expired, atau DP lalu pelunasan).
     const orderId = buildOrderId(booking.id, Date.now().toString(36));
     const account = booking.weddingProject?.account;
+    // ponytail: Midtrans menolak email kosong ("email is not valid").
+    // Email yang tidak valid pun diganti placeholder berdomain aman supaya
+    // customer_details selalu lolos validasi Snap.
+    const customerEmail =
+        account?.email && account.email.includes("@")
+            ? account.email
+            : "customer@simpul.my.id";
     const customer = {
-        firstName: account?.fullName ?? "",
-        email: account?.email ?? "",
+        firstName: account?.fullName ?? "Pelanggan SIMPUL",
+        email: customerEmail,
     };
     const { token, redirectUrl } = await createSnapTransaction({
         orderId,

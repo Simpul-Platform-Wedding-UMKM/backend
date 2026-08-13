@@ -4,6 +4,117 @@ import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
 import { CATEGORIES } from "../../lib/categories.js";
 import { normalizeLocation } from "../../lib/location.js";
 
+// ---------------------------------------------------------------------------
+// Admin dashboard summary — satu endpoint untuk seluruh KPI & ringkasan.
+// Frontend tidak lagi menebak shape dari endpoint public; semua angka dihitung
+// di sini dari tabel yang benar-benar ada.
+// ---------------------------------------------------------------------------
+
+// GET /admin/dashboard
+export const getDashboardSummary = asyncHandler(async (req, res) => {
+  const [vendorsRaw, splits, disputes, heatmap] = await Promise.all([
+    prisma.vendor.findMany({
+      include: {
+        account: { select: { email: true, fullName: true } },
+        services: { select: { id: true } },
+        bookingItems: { select: { id: true } },
+        reviews: { select: { id: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.paymentSplit.findMany({
+      include: { payment: true },
+    }),
+    prisma.dispute.findMany({
+      include: {
+        bookingItem: { include: { vendor: true } },
+        raisedBy: { select: { id: true, fullName: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.paymentGeo.findMany({ orderBy: { count: "desc" } }),
+  ]);
+
+  // Status vendor: kybStatus dipetakan ke enum yang dipakai dashboard.
+  const vendors = vendorsRaw.map((v) => {
+    // Revenue = jumlah vendorAmount + platformFee dari split milik vendor
+    // yang payment-nya PAID (uang benar-benar masuk).
+    const vendorSplits = splits.filter((s) => s.vendorId === v.id);
+    const settledRevenue = vendorSplits
+      .filter((s) => s.payment.status === "PAID")
+      .reduce((sum, s) => sum + s.vendorAmount + s.platformFeeAmount, 0);
+    const holdingRevenue = vendorSplits
+      .filter((s) => s.payment.status === "PENDING")
+      .reduce((sum, s) => sum + s.vendorAmount + s.platformFeeAmount, 0);
+
+    return {
+      id: v.id,
+      name: v.businessName,
+      email: v.account?.email ?? "",
+      phone: v.whatsapp ?? "",
+      businessName: v.businessName,
+      businessType: v.category,
+      region: v.region,
+      address: v.description ?? v.region,
+      bankAccountName: v.bankAccountName ?? "",
+      bankAccountNumber: v.bankAccountNumber ?? "",
+      bankName: v.bankName ?? "",
+      bankCode: "",
+      status: v.kybStatus,
+      averageRating: v.ratingAvg,
+      totalReviews: v.ratingCount,
+      totalBookings: v.bookingItems.length,
+      totalRevenue: settledRevenue,
+      holdingFunds: holdingRevenue,
+      kycVerified: v.kybVerified,
+      kycVerifiedAt: v.kybVerified ? v.updatedAt.toISOString() : undefined,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+    };
+  });
+
+  const disputesMapped = disputes.map((d) => ({
+    id: d.id,
+    bookingItemId: d.bookingItemId,
+    bookingId: d.bookingItem.bookingId,
+    vendorId: d.bookingItem.vendorId,
+    buyerId: d.raisedById,
+    status: d.status,
+    reason: d.reason,
+    description: d.reason,
+    evidence: d.evidenceUrls,
+    resolutionType: d.status === "RESOLVED" ? "RESOLVED" : undefined,
+    resolutionNotes: d.resolution || undefined,
+    resolvedAt: d.resolvedAt?.toISOString() || undefined,
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.createdAt.toISOString(),
+  }));
+
+  const totalGMV = splits
+    .filter((s) => s.payment.status === "PAID")
+    .reduce((sum, s) => sum + s.vendorAmount + s.platformFeeAmount, 0);
+
+  res.json({
+    vendors,
+    paymentSplits: splits.length,
+    disputes: disputesMapped,
+    heatmap: heatmap.map((r) => ({
+      id: r.id,
+      kecamatan: r.kecamatan,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      amount: r.amount,
+      count: r.count,
+    })),
+    kpis: {
+      totalGMV,
+      activeVendors: vendors.filter((v) => v.status === "VERIFIED").length,
+      totalTransactions: splits.length,
+      openDisputes: disputes.filter((d) => d.status === "OPEN").length,
+    },
+  });
+});
+
 // GET /system-users — returns all accounts mapped to the SystemUser shape
 // the admin dashboard expects.
 export const getSystemUsers = asyncHandler(async (req, res) => {

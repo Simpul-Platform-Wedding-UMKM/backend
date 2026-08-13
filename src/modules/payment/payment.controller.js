@@ -133,7 +133,14 @@ export const getPayment = asyncHandler(async (req, res) => {
 export const createRemainderPayment = asyncHandler(async (req, res) => {
   const booking = await prisma.booking.findUnique({
     where: { id: req.params.bookingId },
-    include: { items: true, payment: true },
+    // ponytail: weddingProject.account wajib di-include — createSnapForBooking
+    // membaca account dari sini untuk customer_details Midtrans. Tanpa ini
+    // email jadi "" dan Snap menolak dengan 400 "email is not valid".
+    include: {
+      items: true,
+      payment: true,
+      weddingProject: { include: { account: true } },
+    },
   });
   if (!booking) throw new ApiError(404, "Booking not found");
   const payment = booking.payment;
