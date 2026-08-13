@@ -20,7 +20,9 @@ const QRIS_TTL_MINUTES = 15;
 // Return signature kompatibel dengan pemanggil di payment.controller.js.
 // ---------------------------------------------------------------------------
 export async function createSnapForBooking(booking, totalAmount) {
-    const orderId = buildOrderId(booking.id);
+    // Suffix unik per percobaan — Midtrans menolak order_id yang sudah
+    // pernah dipakai (retry setelah expired, atau DP lalu pelunasan).
+    const orderId = buildOrderId(booking.id, Date.now().toString(36));
     const account = booking.weddingProject?.account;
     const customer = {
         firstName: account?.fullName ?? "",

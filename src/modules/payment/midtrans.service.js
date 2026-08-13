@@ -36,16 +36,23 @@ export class MidtransError extends Error {
 }
 
 // Build a Midtrans order_id from a booking id. Midtrans caps order_id at 50
-// chars, so we keep it short: `SIMPUL-<bookingId>`. Booking ids are cuid()
-// values (unique), and one booking only ever has one active payment at a time
-// (remainder reuses the same Payment row), so this stays unique per payment.
-export function buildOrderId(bookingId) {
-  return `SIMPUL-${bookingId}`;
+// chars, so we keep it short: `SIMPUL-<bookingId>`.
+//
+// ponytail: Midtrans REJECTS an order_id that was already used. One booking
+// can legitimately create several Snap transactions (expired → retry, or
+// DP → pelunasan), so callers pass a unique suffix per attempt. The webhook
+// parser only looks at the first segment, so uniqueness costs nothing.
+export function buildOrderId(bookingId, suffix = "") {
+  const base = `SIMPUL-${bookingId}`;
+  if (!suffix) return base;
+  // Booking ids are cuid() (25 chars) — one short suffix stays under 50.
+  return `${base}-${suffix}`;
 }
 
 // Extract the booking id from a Midtrans order_id. Expected format:
-// `SIMPUL-<bookingId>`. Booking ids are cuid() values (no dashes), so a
-// strict parse on the known structure is safe.
+// `SIMPUL-<bookingId>` optionally followed by `-<attempt suffix>`.
+// Booking ids are cuid() values (no dashes), so parsing only the first
+// segment is safe regardless of the suffix.
 export function extractBookingId(orderId) {
   if (typeof orderId !== "string") return null;
   const parts = orderId.split("-");

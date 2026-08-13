@@ -97,8 +97,8 @@ export const getPayment = asyncHandler(async (req, res) => {
   // can't reach us (e.g. localhost development) and guards against lost or
   // delayed webhooks in production.
   if (payment.status === "PENDING" && payment.pjpProvider === "midtrans" && payment.pjpTransactionId) {
-    await reconcileWithMidtrans(payment).catch((err) =>
-      console.error("reconcileWithMidtrans failed:", err)
+    await reconcilePayment(payment).catch((err) =>
+      console.error("reconcilePayment failed:", err)
     );
   }
 
@@ -209,9 +209,14 @@ export function verifyMidtransSignature(payload) {
 // Reconcile a pending payment against Midtrans' own records. Used when the
 // webhook can't reach us (localhost) or as a safety net for lost webhooks.
 // Idempotent — only acts when the payment is still PENDING.
-async function reconcileWithMidtrans(payment) {
+export async function reconcilePayment(payment) {
+  if (payment.status !== "PENDING") return payment;
+  if (payment.pjpProvider !== "midtrans" || !payment.pjpTransactionId) {
+    return payment;
+  }
+
   const status = await getTransactionStatus(payment.pjpTransactionId);
-  if (!status) return;
+  if (!status) return payment;
 
   const transactionStatus = status.transaction_status;
   if (transactionStatus === "settlement" || transactionStatus === "capture") {
@@ -219,6 +224,7 @@ async function reconcileWithMidtrans(payment) {
     settlePayment(updatedPayment.id).catch((err) =>
       console.error("settlePayment failed:", err)
     );
+    return updatedPayment;
   } else if (transactionStatus === "expire") {
     await markPaymentDead(payment, "EXPIRED", "CANCELLED");
   } else if (transactionStatus === "cancel") {
@@ -226,6 +232,7 @@ async function reconcileWithMidtrans(payment) {
   } else if (transactionStatus === "deny") {
     await markPaymentDead(payment, "FAILED", "CANCELLED");
   }
+  return payment;
 }
 
 // Mark a payment as dead (expired/cancelled/failed) and flip its BookingItems

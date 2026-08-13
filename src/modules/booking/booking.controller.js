@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError, asyncHandler } from "../../middleware/errorHandler.js";
+import { reconcilePayment } from "../payment/payment.controller.js";
 
 const createBookingSchema = z.object({
   weddingProjectId: z.string(),
@@ -123,5 +124,27 @@ export const getBookings = asyncHandler(async (req, res) => {
     },
     orderBy: { createdAt: "desc" },
   });
-  res.json(bookings);
+
+  // Reconcile pembayaran yang masih PENDING ke Midtrans — webhook sandbox
+  // tidak bisa mencapai localhost, jadi tanpa ini pembayaran yang sukses
+  // di Snap tidak akan pernah terlihat "PAID" di riwayat mobile.
+  for (const b of bookings) {
+    if (b.payment && b.payment.pjpProvider === "midtrans") {
+      await reconcilePayment(b.payment).catch((err) =>
+        console.error("reconcilePayment failed for booking", b.id, err)
+      );
+    }
+  }
+
+  // Ambil ulang data setelah reconcile supaya status yang terbaru terkirim.
+  const fresh = await prisma.booking.findMany({
+    where,
+    include: {
+      items: { include: { vendor: true, vendorService: true, dispute: true } },
+      payment: true,
+      weddingProject: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(fresh);
 });
