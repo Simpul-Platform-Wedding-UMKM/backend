@@ -220,21 +220,27 @@ async function reconcileWithMidtrans(payment) {
       console.error("settlePayment failed:", err)
     );
   } else if (transactionStatus === "expire") {
-    await prisma.payment.updateMany({
-      where: { id: payment.id },
-      data: { status: "EXPIRED" },
-    });
+    await markPaymentDead(payment, "EXPIRED", "CANCELLED");
   } else if (transactionStatus === "cancel") {
-    await prisma.payment.updateMany({
-      where: { id: payment.id },
-      data: { status: "CANCELLED" },
-    });
+    await markPaymentDead(payment, "CANCELLED", "CANCELLED");
   } else if (transactionStatus === "deny") {
-    await prisma.payment.updateMany({
-      where: { id: payment.id },
-      data: { status: "FAILED" },
-    });
+    await markPaymentDead(payment, "FAILED", "CANCELLED");
   }
+}
+
+// Mark a payment as dead (expired/cancelled/failed) and flip its BookingItems
+// to a terminal state so they no longer show as "Menunggu Pembayaran".
+async function markPaymentDead(payment, paymentStatus, itemStatus) {
+  await prisma.$transaction([
+    prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: paymentStatus },
+    }),
+    prisma.bookingItem.updateMany({
+      where: { bookingId: payment.bookingId, status: "PENDING" },
+      data: { status: itemStatus },
+    }),
+  ]);
 }
 
 // Shared logic for "a payment just got paid": update Payment (paidAmount,
@@ -290,20 +296,11 @@ export const midtransWebhook = asyncHandler(async (req, res) => {
       );
     }
   } else if (transaction_status === "expire") {
-    await prisma.payment.updateMany({
-      where: { bookingId },
-      data: { status: "EXPIRED" },
-    });
+    await markPaymentDead(payment, "EXPIRED", "CANCELLED");
   } else if (transaction_status === "cancel") {
-    await prisma.payment.updateMany({
-      where: { bookingId },
-      data: { status: "CANCELLED" },
-    });
+    await markPaymentDead(payment, "CANCELLED", "CANCELLED");
   } else if (transaction_status === "deny") {
-    await prisma.payment.updateMany({
-      where: { bookingId },
-      data: { status: "FAILED" },
-    });
+    await markPaymentDead(payment, "FAILED", "CANCELLED");
   }
 
   res.status(200).json({ received: true });
